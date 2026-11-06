@@ -20,7 +20,7 @@ const num=n=>Number(n).toLocaleString('ko-KR',{maximumFractionDigits:8});
 const escapeHtml=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let state;try{state=JSON.parse(localStorage.getItem(KEY))}catch{}
 if(!state||typeof state.cash!=='number'||!state.positions||!Array.isArray(state.trades))state={cash:INITIAL,positions:{},trades:[]};
-let snapshot=null,snapshotAge=Infinity,binance={},quotes={},series={},lastFetch=0, autoOn=false,allMarkets=[],watch={},candidates=[],autoLast=0,autoBusy=false,autoLog='';
+let snapshot=null,snapshotAge=Infinity,binance={},quotes={},series={},lastFetch=0, autoOn=localStorage.getItem('coin-paper-auto-enabled')==='true',allMarkets=[],watch={},candidates=[],autoLast=0,autoBusy=false,autoLog='';
 const save=()=>localStorage.setItem(KEY,JSON.stringify(state));
 const ex=()=>$('exchange').value, coin=()=>$('coin').value, key=(e,c)=>e+':'+c;
 const quote=(e,c)=>quotes[key(e,c)];
@@ -116,8 +116,8 @@ $('backtest').onclick=async()=>{const el=$('backtestResult');el.textContent='업
  const final=cash+qty*Number(bars.at(-1).trade_price);el.textContent='ADA 일봉 '+bars.length+'개 단순 추세전략 | 완료 '+closed+'건 | 승률 '+(closed?(wins/closed*100).toFixed(1)+'%':'표본 없음')+' | 최종 평가 '+won(final)+' | 수익률 '+((final/1000000-1)*100).toFixed(2)+'% | 최대낙폭 '+(maxDD*100).toFixed(2)+'%. 일봉 종가를 체결가로 가정한 별도 검증이며 실제 1분 자동매매 전략의 성과가 아닙니다.';
  }catch(err){el.textContent='과거 검증 실패: '+err.message}};
 
-$('autoToggle').onclick=()=>{autoOn=!autoOn;autoLog=autoOn?'자동매매 켜짐 · 1분마다 후보 확인':'자동매매 중지됨';renderCandidates();if(autoOn)scan()};
+$('autoToggle').onclick=()=>{autoOn=!autoOn;localStorage.setItem('coin-paper-auto-enabled',String(autoOn));autoLog=autoOn?'자동매매 켜짐 · 1분마다 후보 확인':'자동매매 중지됨';renderCandidates();if(autoOn)scan()};
 $('scanNow').onclick=scan;
-populate();render();refresh();scan();setInterval(refresh,30000);setInterval(()=>{if(autoOn)scan()},60000);
+populate();render();autoLog=autoOn?'이전 설정 복원 · 자동매매 실행 중 (시세·조건 충족 시에만 거래)':'자동매매 꺼짐';renderCandidates();refresh();scan();setInterval(refresh,30000);setInterval(()=>{if(autoOn)scan()},60000);document.addEventListener('visibilitychange',()=>{if(!document.hidden&&autoOn){refresh();scan()}});
 
 </script></body></html>
