@@ -86,23 +86,23 @@ async function scan(){if(autoBusy)return;autoBusy=true;partialQuotes=false;try{
    if(!loaded||!snapshot?.upbit?.length)throw Error('실시간 및 백업 시세 연결 실패');
    rows=snapshot.upbit;scanAge=Date.now()-Date.parse(snapshot.updated_at);
  }
- const allowTrade=liveSource&&failed===0&&!partialQuotes;
- const sourceLabel=allowTrade?'실시간 전체 시장':liveSource?'실시간 일부 시장':'백업 '+Math.round(scanAge/60000)+'분 지연';
+ const allowTrade=liveSource&&rows.length>0; // Trade only individual symbols with fresh confirmed quotes.
+ const sourceLabel=liveSource?(failed||partialQuotes?'실시간 일부 시장':'실시간 전체 시장'):'백업 '+Math.round(scanAge/60000)+'분 지연';
   const now=Date.now();candidates=rows.filter(v=>v.trade_price>0&&v.signed_change_rate>-0.12&&v.acc_trade_price_24h>0).map(v=>({coin:v.market.split('-')[1],price:v.trade_price,change:v.signed_change_rate*100,volume:v.acc_trade_price_24h})).sort((a,b)=>Math.abs(b.change)-Math.abs(a.change)).slice(0,40);
  if(liveSource){
  for(const v of rows){if(!(v.trade_price>0))continue;const c=v.market.split('-')[1],k=key('upbit',c);quotes[k]={price:v.trade_price,change:(v.signed_change_rate||0)*100,observedAt:now};let w=watch[c]||{prices:[],lastTrade:0,volumes:[]};w.volumes??=[];w.volumes.push({volume:Number(v.acc_trade_price_24h)||0,time:now});w.volumes=w.volumes.filter(p=>now-p.time<10*60000).slice(-20);w.prices.push({price:v.trade_price,time:now});w.prices=w.prices.filter(p=>now-p.time<30*60000).slice(-60);watch[c]=w}
  }
  autoLog=sourceLabel+' · 후보 '+candidates.length+'개 · '+(failed?'일부 요청 실패 '+failed+'회':'요청 정상');
  if(autoOn&&allowTrade)autoTrade(now);
- else if(autoOn)autoLog=sourceLabel+' · 자동매매 보류: 전체 실시간 시세가 확인되지 않음';
-  if(autoOn && allowTrade && !autoLog.includes('가상 매수') && !autoLog.includes('가상 매도')){const ready=candidates.filter(v=>{const w=watch[v.coin];return w&&w.prices.length>=3&&now-w.prices[0].time>=60000&&now-w.lastTrade>=180000});const btc=quotes['upbit:BTC'];autoLog='후보 '+candidates.length+'개 · 관측시간 충족 '+ready.length+'개 · '+(ready.length?'가격 조정 후 재상승·거래대금 증가 등 매수 조건 미충족':'최소 60초 관측 또는 재매수 대기 중')+(btc&&btc.change<=-5?' · BTC 급락장 신규매수 제한':'')+' · 마지막 검사 '+new Date().toLocaleTimeString('ko-KR');}
+ else if(autoOn)autoLog=sourceLabel+' · 자동매매 보류: 최신 개별 시세 없음';
+  if(autoOn && allowTrade && !autoLog.includes('가상 매수') && !autoLog.includes('가상 매도')){const ready=candidates.filter(v=>{const w=watch[v.coin];return w&&w.prices.length>=2&&now-w.prices[0].time>=60000&&now-w.lastTrade>=180000});const btc=quotes['upbit:BTC'];autoLog=sourceLabel+' · 후보 '+candidates.length+'개 · 관측시간 충족 '+ready.length+'개 · '+(ready.length?'가격 조정 후 재상승·거래대금 증가 등 매수 조건 미충족':'최소 60초 관측 또는 재매수 대기 중')+(btc&&btc.change<=-5?' · BTC 급락장 신규매수 제한':'')+' · 마지막 검사 '+new Date().toLocaleTimeString('ko-KR');}
  render();
  }catch(err){autoLog='후보 조회 실패: '+err.message+' · 공개 시세 및 백업 데이터 접근이 모두 실패했습니다. 자동 주문은 실행되지 않습니다.';renderCandidates()}finally{autoBusy=false}}
 function autoTrade(now){
  // 모의투자 안전 제한: 최대 20종목, 1만원 단위, 단일 주문 총자산 10% 및 100만원 상한, 현금 10% 보유
  for(const [k,p] of Object.entries(state.positions)){
   if(!k.startsWith('upbit:')||!(p.qty>0))continue;
-  const c=k.split(':')[1],v=quotes[k];if(!v)continue;
+  const c=k.split(':')[1],v=quotes[k];if(!v||!v.observedAt||now-v.observedAt>90000)continue;
   p.peak=Math.max(p.peak||p.avg,v.price);
   const rate=v.price/p.avg-1,drawdown=v.price/p.peak-1;
   const recent=(watch[c]?.prices||[]).map(x=>x.price),momentum=recent.length>=3?recent.at(-1)/recent.at(-3)-1:0;const strongTrend=rate>=0.08&&momentum>=0&&drawdown>-.08;const exit=rate<=-0.025||(!strongTrend&&((rate>=0.02&&drawdown<=-0.012)||(rate>=0.06&&drawdown<=-0.035)||(rate>=0.20&&drawdown<=-0.08)));
@@ -110,12 +110,12 @@ function autoTrade(now){
  }
  let active=Object.values(state.positions).filter(p=>p.qty>0).length;
  if(active<20)for(const v of candidates){
-  const w=watch[v.coin];if(!w||w.prices.length<3||now-w.prices[0].time<60000||now-w.lastTrade<180000)continue;
+  const w=watch[v.coin];if(!w||w.prices.length<2||now-w.prices[0].time<60000||now-w.lastTrade<180000||!quotes[key('upbit',v.coin)]?.observedAt||now-quotes[key('upbit',v.coin)].observedAt>90000)continue;
   const k=key('upbit',v.coin);if(state.positions[k]?.qty>0)continue;
   const prices=w.prices.map(p=>p.price),high=Math.max(...prices),current=v.price,prior=prices.at(-2);
-  const low=Math.min(...prices),range=high/Math.max(low,1e-12)-1;const rebound=current>prior&&current>=low*1.004;const breakout=current>=high*0.997&&current>prior;const sideways=range>=0.025&&current<=low+(high-low)*0.45&&rebound;const dip=range>=0.018&&rebound&&current<high*0.985;const trend=breakout&&v.change>=1.5;if(!(sideways||dip||trend))continue;
+  const low=Math.min(...prices),range=high/Math.max(low,1e-12)-1;const rebound=current>prior&&current>=low*1.004;const breakout=current>=high*0.997&&current>prior;const sideways=range>=0.008&&current<=low+(high-low)*0.70&&rebound;const dip=range>=0.006&&rebound&&current<high*0.998;const trend=breakout&&v.change>=0.7;const recovery=current>=low*1.003&&current>prior&&v.change>-3;if(!(sideways||dip||trend||recovery))continue;
   // 상승률·거래대금 기반 점수는 미래 상승 확률이 아닌 단순 탐색 점수
-  const volumes=w.volumes||[],volumeDelta=volumes.length>=2?volumes.at(-1).volume-volumes[0].volume:0;const btc=quotes['upbit:BTC'];if(btc&&btc.change<=-5){const global=binance[v.coin],local=quotes[key('upbit',v.coin)];if(!(global&&local&&local.change-global.change>=5&&local.change>=5))continue;}if(volumes.length>=3&&volumeDelta<0)continue;const global=binance[v.coin],relative=global?v.change-global.change:0;const score=(v.change>=5?2:v.change>=3?1:0)+(volumeDelta>0?1:0)+(range>=0.03?1:0)+(relative>=5?1:0);
+  const volumes=w.volumes||[],volumeDelta=volumes.length>=2?volumes.at(-1).volume-volumes[0].volume:0;const btc=quotes['upbit:BTC'];if(btc&&btc.change<=-5){const global=binance[v.coin],local=quotes[key('upbit',v.coin)];if(!(global&&local&&local.change-global.change>=5&&local.change>=5))continue;}if(volumes.length>=3&&volumeDelta<0&&!(trend||recovery))continue;const global=binance[v.coin],relative=global?v.change-global.change:0;const score=(v.change>=5?2:v.change>=3?1:0)+(volumeDelta>0?1:0)+(range>=0.03?1:0)+(relative>=5?1:0);
   const units=score>=4?10:score===3?7:score===2?4:score===1?2:1;
   const equity=state.cash+Object.entries(state.positions).reduce((sum,[pk,p])=>sum+(p.qty>0?(quotes[pk]?.price||p.avg)*p.qty:0),0);
   const cap=Math.min(units*100000,1000000,equity*0.1,state.cash-Math.max(100000,equity*0.1));
