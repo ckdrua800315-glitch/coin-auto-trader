@@ -6,7 +6,7 @@
 <div class="grid"><section class="card"><h2>시장 / 코인 선택</h2><div class="row"><div><label>거래소</label><select id="exchange"><option value="upbit">업비트</option><option value="bithumb">빗썸</option></select></div><div><label>코인</label><select id="coin"></select></div></div><div class="value" id="price">-</div><div id="change" class="muted">-</div><p class="notice">시세는 공개 API에서 조회합니다. 거래소별 호가·체결가격과 다를 수 있으며, 이 화면에서 실제 주문은 전송되지 않습니다.</p><button class="secondary" id="refresh">시세 새로고침</button></section>
 <section class="card"><h2>가상 주문</h2><label>수량 (코인 개수)</label><input id="qty" type="number" min="0" step="any" placeholder="예: 10"><div class="row" style="margin-top:12px"><button id="buy">가상 매수</button><button class="danger" id="sell">가상 매도</button></div><p class="notice" id="estimate">코인을 선택하고 수량을 입력하세요.</p><div id="tradeMsg" role="status"></div></section></div>
 <section class="card"><h2>가격 흐름 · 간단 신호</h2><canvas id="chart"></canvas><div id="signal" class="notice">최근 시세 데이터를 불러오는 중입니다.</div><p class="notice">신호는 최근 수집된 가격 변화만 이용한 참고 지표이며 매수·매도 추천이나 수익 보장이 아닙니다.</p></section>
-<section class="card"><h2>자동 가상매매 · 상승 후보 탐색</h2><p class="notice">업비트 원화마켓을 조회해 거래대금과 상승률로 후보를 찾습니다. 최근 관측 고점에서 소폭 조정 후 회복할 때 가상 매수를 시도합니다. 상승 중에는 최고가 대비 되돌림을 관찰해 매도하며, 최대 20종목을 보유합니다. 10만원 단위로 10만~30만원을 배분하고 한 종목당 평가자산 30% 이내, 현금 최소 10%를 유지합니다. 저점·고점 적중을 보장하지 않습니다.</p><div class="row"><button id="autoToggle">자동 가상매매 시작</button><button class="secondary" id="scanNow">후보 다시 찾기</button></div><p id="autoStatus" class="notice">자동매매 꺼짐 · 브라우저가 열려 있을 때만 실행</p><div class="scroll"><table><thead><tr><th>상승 후보</th><th>현재가</th><th>24시간 상승률</th><th>24시간 거래대금</th></tr></thead><tbody id="candidates"><tr><td colspan="4">검색 대기 중</td></tr></tbody></table></div></section><section class="card"><h2>시장 시세</h2><div class="scroll"><table><thead><tr><th>종목</th><th>현재가 (KRW)</th><th>24시간 변동</th></tr></thead><tbody id="market"></tbody></table></div></section>
+<section class="card"><h2>자동 가상매매 · 상승 후보 탐색</h2><p class="notice">업비트 원화마켓을 조회해 거래대금과 상승률로 후보를 찾습니다. 최근 관측 고점에서 소폭 조정 후 회복할 때 가상 매수를 시도합니다. 상승 중에는 최고가 대비 되돌림을 관찰해 매도하며, 최대 20종목을 보유합니다. 10만원 단위로 10만~100만원을 배분합니다. 단일 주문은 평가자산의 최대 10%이며 현금 최소 10%를 유지합니다. 저점·고점 적중을 보장하지 않습니다.</p><div class="row"><button id="autoToggle">자동 가상매매 시작</button><button class="secondary" id="scanNow">후보 다시 찾기</button></div><p id="autoStatus" class="notice">자동매매 꺼짐 · 브라우저가 열려 있을 때만 실행</p><div class="scroll"><table><thead><tr><th>상승 후보</th><th>현재가</th><th>24시간 상승률</th><th>24시간 거래대금</th></tr></thead><tbody id="candidates"><tr><td colspan="4">검색 대기 중</td></tr></tbody></table></div></section><section class="card"><h2>시장 시세</h2><div class="scroll"><table><thead><tr><th>종목</th><th>현재가 (KRW)</th><th>24시간 변동</th></tr></thead><tbody id="market"></tbody></table></div></section>
 <section class="card"><h2>가상 보유 자산</h2><div class="scroll"><table><thead><tr><th>거래소·코인</th><th>수량</th><th>평균 매수가</th><th>평가금액</th><th>평가손익</th></tr></thead><tbody id="holdings"></tbody></table></div></section>
 <section class="card"><h2>가상 거래 내역</h2><div class="row"><button class="secondary" id="csv">CSV 내려받기</button><button class="danger" id="reset">모의투자 초기화</button></div><div class="scroll"><table><thead><tr><th>시간</th><th>거래소</th><th>종목</th><th>구분</th><th>수량</th><th>가격</th><th>금액</th></tr></thead><tbody id="history"></tbody></table></div></section>
 <section class="card notice"><b>중요 안내</b><p>이 페이지는 브라우저에서만 작동하는 모의투자 1차 버전입니다. 데이터는 현재 브라우저의 로컬 저장소에 저장되며 기기 변경·브라우저 데이터 삭제 시 사라질 수 있습니다. 백그라운드 24시간 자동매매, 과거 차트 백테스트, 뉴스 분석, 서버 동기화, 알림, 실제 주문은 아직 구현되지 않았습니다. 실거래 API 키를 이 공개 웹사이트에 입력하지 마세요.</p></section></main>
@@ -48,7 +48,7 @@ async function scan(){if(autoBusy)return;autoBusy=true;try{
  render();
  }catch(err){autoLog='후보 조회 실패: '+err.message+' · 브라우저에서 업비트 API 접근이 차단됐을 수 있습니다. 자동 주문은 실행되지 않습니다.';renderCandidates()}finally{autoBusy=false}}
 function autoTrade(now){
- // 모의투자 안전 제한: 최대 20종목, 10만원 단위, 1종목 총자산 30% 이내, 현금 10% 보유
+ // 모의투자 안전 제한: 최대 20종목, 10만원 단위, 단일 주문 총자산 10% 및 100만원 상한, 현금 10% 보유
  for(const [k,p] of Object.entries(state.positions)){
   if(!k.startsWith('upbit:')||!(p.qty>0))continue;
   const c=k.split(':')[1],v=quotes[k];if(!v)continue;
@@ -65,9 +65,9 @@ function autoTrade(now){
   if(high<=0||!(current<high*0.995&&current>high*0.98&&current>prior))continue;
   // 상승률·거래대금 기반 점수는 미래 상승 확률이 아닌 단순 탐색 점수
   const score=(v.change>=5?2:v.change>=3?1:0)+(v.volume>=10000000000?2:v.volume>=3000000000?1:0);
-  const units=score>=4?3:score>=2?2:1;
+  const units=score>=4?10:score===3?7:score===2?4:score===1?2:1;
   const equity=state.cash+Object.entries(state.positions).reduce((sum,[pk,p])=>sum+(p.qty>0?(quotes[pk]?.price||p.avg)*p.qty:0),0);
-  const cap=Math.min(units*100000,equity*0.3,state.cash-Math.max(100000,equity*0.1));
+  const cap=Math.min(units*100000,1000000,equity*0.1,state.cash-Math.max(100000,equity*0.1));
   const amount=Math.floor(cap/100000)*100000;
   if(amount<100000)continue;
   const qty=Math.floor(amount/current*1e8)/1e8;
