@@ -39,14 +39,14 @@ $('csv').onclick=()=>{const headers=['시간','거래소','코인','구분','수
 
 function renderCandidates(){const target=$('candidates');if(!target)return;target.innerHTML=candidates.slice(0,8).map(v=>'<tr><td>'+escapeHtml(v.coin)+'</td><td>'+won(v.price)+'</td><td class="up">+'+v.change.toFixed(2)+'%</td><td>'+won(v.volume)+'</td></tr>').join('')||'<tr><td colspan="4">조회된 후보 없음</td></tr>';$('autoStatus').textContent=(autoOn?'자동 가상매매 실행 중':'자동 가상매매 꺼짐')+' · '+(autoLog||'브라우저가 열려 있을 때만 실행');$('autoToggle').textContent=autoOn?'자동 가상매매 중지':'자동 가상매매 시작'}
 async function scan(){if(autoBusy)return;autoBusy=true;try{
- if(!allMarkets.length){const markets=await getJson('https://api.upbit.com/v1/market/all?isDetails=false');allMarkets=markets.filter(m=>m.market.startsWith('KRW-')).map(m=>m.market)}
- let rows=[];for(let i=0;i<allMarkets.length;i+=90){const chunk=await getJson('https://api.upbit.com/v1/ticker?markets='+encodeURIComponent(allMarkets.slice(i,i+90).join(',')));if(Array.isArray(chunk))rows.push(...chunk)}
+ if(!allMarkets.length){try{const markets=await getJson('https://api.upbit.com/v1/market/all?isDetails=false');allMarkets=markets.filter(m=>m.market.startsWith('KRW-')).map(m=>m.market)}catch(err){allMarkets=SYMBOLS.map(c=>'KRW-'+c);autoLog='전체 마켓 조회 불가 · 주요 코인만 탐색'}}
+ let rows=[];let failed=0;for(let i=0;i<allMarkets.length;i+=70){try{const chunk=await getJson('https://api.upbit.com/v1/ticker?markets='+encodeURIComponent(allMarkets.slice(i,i+70).join(',')));if(Array.isArray(chunk))rows.push(...chunk)}catch(err){failed++}}if(!rows.length)throw Error('업비트 시세 API 연결 실패');
  const now=Date.now();candidates=rows.filter(v=>v.trade_price>0&&v.signed_change_rate>0.015&&v.acc_trade_price_24h>1000000000).map(v=>({coin:v.market.split('-')[1],price:v.trade_price,change:v.signed_change_rate*100,volume:v.acc_trade_price_24h})).sort((a,b)=>b.volume-a.volume).slice(0,12);
  for(const v of rows){if(!(v.trade_price>0))continue;const c=v.market.split('-')[1],k=key('upbit',c);quotes[k]={price:v.trade_price,change:(v.signed_change_rate||0)*100};let w=watch[c]||{prices:[],lastTrade:0};w.prices.push({price:v.trade_price,time:now});w.prices=w.prices.filter(p=>now-p.time<30*60000).slice(-60);watch[c]=w}
- autoLog='최근 후보 조회 '+new Date().toLocaleTimeString('ko-KR')+' · '+candidates.length+'종목';
+ autoLog='최근 후보 조회 '+new Date().toLocaleTimeString('ko-KR')+' · '+candidates.length+'종목'+(failed?' · 일부 시세 조회 실패':'')+(allMarkets.length===SYMBOLS.length?' · 주요 코인만 검색':'');
  if(autoOn)autoTrade(now);
  render();
- }catch(err){autoLog='후보 조회 실패: '+err.message+' (공개 API 제한 또는 네트워크 문제)';renderCandidates()}finally{autoBusy=false}}
+ }catch(err){autoLog='후보 조회 실패: '+err.message+' · 브라우저에서 업비트 API 접근이 차단됐을 수 있습니다. 자동 주문은 실행되지 않습니다.';renderCandidates()}finally{autoBusy=false}}
 function autoTrade(now){
  // 1% 손절 / 2% 익절, 최대 2종목, 1회 자금 최대 10%, 15분 재진입 대기
  for(const [k,p] of Object.entries(state.positions)){if(!k.startsWith('upbit:')||!(p.qty>0))continue;const c=k.split(':')[1],v=quotes[k];if(!v)continue;const rate=v.price/p.avg-1;if(rate>=0.02||rate<=-0.01){const amount=p.qty*v.price;state.cash+=amount;state.trades.unshift({time:new Date().toLocaleString('ko-KR'),exchange:'upbit',coin:c,side:'자동 매도',qty:p.qty,price:v.price,amount});p.qty=0;p.avg=0;(watch[c]??={prices:[],lastTrade:0}).lastTrade=now;autoLog=c+' 가상 매도 '+(rate*100).toFixed(2)+'% (수수료 미반영)'}}
