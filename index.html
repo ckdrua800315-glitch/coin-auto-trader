@@ -62,10 +62,10 @@ function renderCandidates(){const target=$('candidates');if(!target)return;targe
 async function scan(){if(autoBusy)return;autoBusy=true;try{
  if(!allMarkets.length){try{const markets=await getJson('https://api.upbit.com/v1/market/all?isDetails=false');allMarkets=markets.filter(m=>m.market.startsWith('KRW-')).map(m=>m.market)}catch(err){allMarkets=SYMBOLS.map(c=>'KRW-'+c);autoLog='전체 마켓 조회 불가 · 주요 코인만 탐색'}}
  let rows=[];let failed=0;for(let i=0;i<allMarkets.length;i+=70){try{const chunk=await getJson('https://api.upbit.com/v1/ticker?markets='+encodeURIComponent(allMarkets.slice(i,i+70).join(',')));if(Array.isArray(chunk))rows.push(...chunk)}catch(err){failed++}}if(!rows.length){if((!snapshot||Date.now()-Date.parse(snapshot.updated_at)>20*60000)&&!(await loadSnapshot()))throw Error('업비트 시세 API 및 백업 시세 연결 실패');rows=snapshot.upbit;autoLog='백업 시세 기반 후보 탐색 · '+Math.round(snapshotAge/60000)+'분 지연'}
- const now=Date.now();candidates=rows.filter(v=>v.trade_price>0&&v.signed_change_rate>0.015&&v.acc_trade_price_24h>1000000000).map(v=>({coin:v.market.split('-')[1],price:v.trade_price,change:v.signed_change_rate*100,volume:v.acc_trade_price_24h})).sort((a,b)=>b.volume-a.volume).slice(0,12);
+ const now=Date.now();candidates=rows.filter(v=>v.trade_price>0&&v.signed_change_rate>-0.12&&v.acc_trade_price_24h>0).map(v=>({coin:v.market.split('-')[1],price:v.trade_price,change:v.signed_change_rate*100,volume:v.acc_trade_price_24h})).sort((a,b)=>Math.abs(b.change)-Math.abs(a.change)).slice(0,40);
  for(const v of rows){if(!(v.trade_price>0))continue;const c=v.market.split('-')[1],k=key('upbit',c);quotes[k]={price:v.trade_price,change:(v.signed_change_rate||0)*100};let w=watch[c]||{prices:[],lastTrade:0,volumes:[]};w.volumes??=[];w.volumes.push({volume:Number(v.acc_trade_price_24h)||0,time:now});w.volumes=w.volumes.filter(p=>now-p.time<10*60000).slice(-20);w.prices.push({price:v.trade_price,time:now});w.prices=w.prices.filter(p=>now-p.time<30*60000).slice(-60);watch[c]=w}
  autoLog='최근 후보 조회 '+new Date().toLocaleTimeString('ko-KR')+' · '+candidates.length+'종목'+(failed?' · 일부 시세 조회 실패':'')+(allMarkets.length===SYMBOLS.length?' · 주요 코인만 검색':'');
- if(autoOn)autoTrade(now);
+ if(autoOn&&snapshotAge<120000)autoTrade(now);else if(autoOn&&snapshotAge>=120000)autoLog='백업 시세 지연으로 매매 보류 · 최신 시세 필요';
  if(autoOn && !autoLog.includes('가상 매수') && !autoLog.includes('가상 매도')){const ready=candidates.filter(v=>{const w=watch[v.coin];return w&&w.prices.length>=4&&now-w.prices[0].time>=90000&&now-w.lastTrade>=900000});const btc=quotes['upbit:BTC'];autoLog='후보 '+candidates.length+'개 · 관측시간 충족 '+ready.length+'개 · '+(ready.length?'가격 조정 후 재상승·거래대금 증가 등 매수 조건 미충족':'최소 90초 관측 또는 재매수 대기 중')+(btc&&btc.change<=-5?' · BTC 급락장 신규매수 제한':'')+' · 마지막 검사 '+new Date().toLocaleTimeString('ko-KR');}
  render();
  }catch(err){autoLog='후보 조회 실패: '+err.message+' · 공개 시세 및 백업 데이터 접근이 모두 실패했습니다. 자동 주문은 실행되지 않습니다.';renderCandidates()}finally{autoBusy=false}}
@@ -81,17 +81,17 @@ function autoTrade(now){
  }
  let active=Object.values(state.positions).filter(p=>p.qty>0).length;
  if(active<20)for(const v of candidates){
-  const w=watch[v.coin];if(!w||w.prices.length<4||now-w.prices[0].time<90000||now-w.lastTrade<900000)continue;
+  const w=watch[v.coin];if(!w||w.prices.length<3||now-w.prices[0].time<60000||now-w.lastTrade<180000)continue;
   const k=key('upbit',v.coin);if(state.positions[k]?.qty>0)continue;
   const prices=w.prices.map(p=>p.price),high=Math.max(...prices),current=v.price,prior=prices.at(-2);
-  if(high<=0||!(current<high*0.995&&current>high*0.98&&current>prior))continue;const recent=prices.slice(-4);if(recent.filter((p,i)=>i&&p<recent[i-1]).length>=2)continue;
+  const low=Math.min(...prices),range=high/Math.max(low,1e-12)-1;const rebound=current>prior&&current>=low*1.004;const breakout=current>=high*0.997&&current>prior;const sideways=range>=0.025&&current<=low+(high-low)*0.45&&rebound;const dip=range>=0.018&&rebound&&current<high*0.985;const trend=breakout&&v.change>=1.5;if(!(sideways||dip||trend))continue;
   // 상승률·거래대금 기반 점수는 미래 상승 확률이 아닌 단순 탐색 점수
-  const volumes=w.volumes||[],volumeDelta=volumes.length>=2?volumes.at(-1).volume-volumes[0].volume:0;const btc=quotes['upbit:BTC'];if(btc&&btc.change<=-5){const global=binance[v.coin],local=quotes[key('upbit',v.coin)];if(!(global&&local&&local.change-global.change>=5&&local.change>=5))continue;}if(volumes.length<3||volumeDelta<=0)continue;const global=binance[v.coin],relative=global?v.change-global.change:0;const score=(v.change>=5?2:v.change>=3?1:0)+(v.volume>=10000000000?2:v.volume>=3000000000?1:0)+(relative>=5?1:0);
+  const volumes=w.volumes||[],volumeDelta=volumes.length>=2?volumes.at(-1).volume-volumes[0].volume:0;const btc=quotes['upbit:BTC'];if(btc&&btc.change<=-5){const global=binance[v.coin],local=quotes[key('upbit',v.coin)];if(!(global&&local&&local.change-global.change>=5&&local.change>=5))continue;}if(volumes.length>=3&&volumeDelta<0)continue;const global=binance[v.coin],relative=global?v.change-global.change:0;const score=(v.change>=5?2:v.change>=3?1:0)+(volumeDelta>0?1:0)+(range>=0.03?1:0)+(relative>=5?1:0);
   const units=score>=4?10:score===3?7:score===2?4:score===1?2:1;
   const equity=state.cash+Object.entries(state.positions).reduce((sum,[pk,p])=>sum+(p.qty>0?(quotes[pk]?.price||p.avg)*p.qty:0),0);
   const cap=Math.min(units*100000,1000000,equity*0.1,state.cash-Math.max(100000,equity*0.1));
-  const amount=Math.floor(cap/100000)*100000;
-  if(amount<100000)continue;
+  const amount=Math.floor(cap/10000)*10000;
+  if(amount<10000)continue;
   const qty=Math.floor(amount/current*1e8)/1e8;
   if(qty<=0||qty*current>state.cash)continue;
   const fill=current*(1+SLIPPAGE),cost=qty*fill,fee=cost*FEE;if(cost+fee>state.cash)continue;state.cash-=cost+fee;state.positions[k]={qty,avg:fill,peak:fill};
