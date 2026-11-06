@@ -61,25 +61,41 @@ function renderCross(){const names=new Set(['BTC','ETH','ADA','XRP',...Object.ke
 function renderCandidates(){const target=$('candidates');if(!target)return;target.innerHTML=candidates.slice(0,8).map(v=>'<tr><td>'+escapeHtml(v.coin)+'</td><td>'+won(v.price)+'</td><td class="up">+'+v.change.toFixed(2)+'%</td><td>'+won(v.volume)+'</td></tr>').join('')||'<tr><td colspan="4">조회된 후보 없음</td></tr>';$('autoStatus').textContent=(autoOn?'자동 가상매매 실행 중':'자동 가상매매 꺼짐')+' · '+(autoLog||'브라우저가 열려 있을 때만 실행');$('autoToggle').textContent=autoOn?'자동 가상매매 중지':'자동 가상매매 시작'}
 async function scan(){if(autoBusy)return;autoBusy=true;partialQuotes=false;try{
  if(!allMarkets.length){try{const markets=await getJson('https://api.upbit.com/v1/market/all?isDetails=false');allMarkets=markets.filter(m=>m.market.startsWith('KRW-')).map(m=>m.market)}catch(err){allMarkets=SYMBOLS.map(c=>'KRW-'+c);autoLog='전체 마켓 조회 불가 · 주요 코인만 탐색'}}
- let rows=[];let failed=0;for(let i=0;i<allMarkets.length;i+=70){try{const chunk=await getJson('https://api.upbit.com/v1/ticker?markets='+encodeURIComponent(allMarkets.slice(i,i+70).join(',')));if(Array.isArray(chunk))rows.push(...chunk)}catch(err){failed++}}if(!rows.length){
- // The market-wide endpoint can be blocked even when the small ticker request succeeds.
- // Reuse only fresh, successfully fetched Upbit quotes; never trade on stale snapshot data.
- const fresh=lastUpbitSuccess>0&&Date.now()-lastUpbitSuccess<90000;
- if(fresh){
-   rows=Object.entries(quotes).filter(([k,v])=>k.startsWith('upbit:')&&v.price>0&&v.observedAt>=lastUpbitSuccess)
-     .map(([k,v])=>({market:'KRW-'+k.split(':')[1],trade_price:v.price,signed_change_rate:v.change/100,acc_trade_price_24h:0}));
-   if(rows.length){partialQuotes=true;autoLog='전체 시장 API 실패 · 최신 주요 코인 시세로 제한 탐색 ('+rows.length+'종목)'}
+ let rows=[];let failed=0;let liveSource=false;let scanAge=Infinity;
+ // Smaller batches reduce failures caused by long query strings and rate limits.
+ const fetchChunk=async chunk=>{
+   for(let attempt=0;attempt<2;attempt++){
+     try{const result=await getJson('https://api.upbit.com/v1/ticker?markets='+encodeURIComponent(chunk.join(',')));
+       if(Array.isArray(result)&&result.length)return result;
+     }catch(e){if(attempt===0)await new Promise(r=>setTimeout(r,450))}
+   }
+   return null;
+ };
+ for(let i=0;i<allMarkets.length;i+=25){
+   const chunk=await fetchChunk(allMarkets.slice(i,i+25));
+   if(chunk)rows.push(...chunk);else failed++;
+ }
+ if(rows.length){liveSource=true;scanAge=0}
+ if(!rows.length){
+   // If full-market polling fails, try a fresh small live request before using a snapshot.
+   const small=await fetchChunk(SYMBOLS.map(c=>'KRW-'+c));
+   if(small){rows=small;liveSource=true;partialQuotes=true;scanAge=0}
  }
  if(!rows.length){
-   if((!snapshot||Date.now()-Date.parse(snapshot.updated_at)>20*60000)&&!(await loadSnapshot()))throw Error('업비트 전체 시장 API와 최신 시세 모두 접근 실패');
-   rows=snapshot.upbit;autoLog='백업 시세 기반 후보 탐색 · '+Math.round(snapshotAge/60000)+'분 지연';
+   const loaded=await loadSnapshot();
+   if(!loaded||!snapshot?.upbit?.length)throw Error('실시간 및 백업 시세 연결 실패');
+   rows=snapshot.upbit;scanAge=Date.now()-Date.parse(snapshot.updated_at);
  }
-}
- const now=Date.now();candidates=rows.filter(v=>v.trade_price>0&&v.signed_change_rate>-0.12&&v.acc_trade_price_24h>0).map(v=>({coin:v.market.split('-')[1],price:v.trade_price,change:v.signed_change_rate*100,volume:v.acc_trade_price_24h})).sort((a,b)=>Math.abs(b.change)-Math.abs(a.change)).slice(0,40);
- for(const v of rows){if(!(v.trade_price>0))continue;const c=v.market.split('-')[1],k=key('upbit',c);quotes[k]={price:v.trade_price,change:(v.signed_change_rate||0)*100};let w=watch[c]||{prices:[],lastTrade:0,volumes:[]};w.volumes??=[];w.volumes.push({volume:Number(v.acc_trade_price_24h)||0,time:now});w.volumes=w.volumes.filter(p=>now-p.time<10*60000).slice(-20);w.prices.push({price:v.trade_price,time:now});w.prices=w.prices.filter(p=>now-p.time<30*60000).slice(-60);watch[c]=w}
- autoLog='최근 후보 조회 '+new Date().toLocaleTimeString('ko-KR')+' · '+candidates.length+'종목'+(failed?' · 일부 시세 조회 실패':'')+(allMarkets.length===SYMBOLS.length?' · 주요 코인만 검색':'');
- const liveQuotes=rows.length>0&&rows!==snapshot?.upbit&&(failed===0||partialQuotes)&&(!partialQuotes||Date.now()-lastUpbitSuccess<90000);const freshBackup=rows===snapshot?.upbit&&snapshotAge<120000;if(autoOn&&liveQuotes&&!partialQuotes)autoTrade(now);else if(autoOn&&partialQuotes)autoLog='최신 주요 코인 시세 연결 정상 · 전체 시장 분석 장애로 신규 자동매매 보류 (안전 제한)';else if(autoOn&&freshBackup)autoLog='백업 시세 확인 · 최신 실시간 시세가 없어 신규 자동매매 보류';else if(autoOn)autoLog='시세 신뢰도 부족으로 매매 보류 · 최신 시세 필요';
- if(autoOn && liveQuotes && !partialQuotes && !autoLog.includes('가상 매수') && !autoLog.includes('가상 매도')){const ready=candidates.filter(v=>{const w=watch[v.coin];return w&&w.prices.length>=3&&now-w.prices[0].time>=60000&&now-w.lastTrade>=180000});const btc=quotes['upbit:BTC'];autoLog='후보 '+candidates.length+'개 · 관측시간 충족 '+ready.length+'개 · '+(ready.length?'가격 조정 후 재상승·거래대금 증가 등 매수 조건 미충족':'최소 60초 관측 또는 재매수 대기 중')+(btc&&btc.change<=-5?' · BTC 급락장 신규매수 제한':'')+' · 마지막 검사 '+new Date().toLocaleTimeString('ko-KR');}
+ const allowTrade=liveSource&&failed===0&&!partialQuotes;
+ const sourceLabel=allowTrade?'실시간 전체 시장':liveSource?'실시간 일부 시장':'백업 '+Math.round(scanAge/60000)+'분 지연';
+  const now=Date.now();candidates=rows.filter(v=>v.trade_price>0&&v.signed_change_rate>-0.12&&v.acc_trade_price_24h>0).map(v=>({coin:v.market.split('-')[1],price:v.trade_price,change:v.signed_change_rate*100,volume:v.acc_trade_price_24h})).sort((a,b)=>Math.abs(b.change)-Math.abs(a.change)).slice(0,40);
+ if(liveSource){
+ for(const v of rows){if(!(v.trade_price>0))continue;const c=v.market.split('-')[1],k=key('upbit',c);quotes[k]={price:v.trade_price,change:(v.signed_change_rate||0)*100,observedAt:now};let w=watch[c]||{prices:[],lastTrade:0,volumes:[]};w.volumes??=[];w.volumes.push({volume:Number(v.acc_trade_price_24h)||0,time:now});w.volumes=w.volumes.filter(p=>now-p.time<10*60000).slice(-20);w.prices.push({price:v.trade_price,time:now});w.prices=w.prices.filter(p=>now-p.time<30*60000).slice(-60);watch[c]=w}
+ }
+ autoLog=sourceLabel+' · 후보 '+candidates.length+'개 · '+(failed?'일부 요청 실패 '+failed+'회':'요청 정상');
+ if(autoOn&&allowTrade)autoTrade(now);
+ else if(autoOn)autoLog=sourceLabel+' · 자동매매 보류: 전체 실시간 시세가 확인되지 않음';
+  if(autoOn && allowTrade && !autoLog.includes('가상 매수') && !autoLog.includes('가상 매도')){const ready=candidates.filter(v=>{const w=watch[v.coin];return w&&w.prices.length>=3&&now-w.prices[0].time>=60000&&now-w.lastTrade>=180000});const btc=quotes['upbit:BTC'];autoLog='후보 '+candidates.length+'개 · 관측시간 충족 '+ready.length+'개 · '+(ready.length?'가격 조정 후 재상승·거래대금 증가 등 매수 조건 미충족':'최소 60초 관측 또는 재매수 대기 중')+(btc&&btc.change<=-5?' · BTC 급락장 신규매수 제한':'')+' · 마지막 검사 '+new Date().toLocaleTimeString('ko-KR');}
  render();
  }catch(err){autoLog='후보 조회 실패: '+err.message+' · 공개 시세 및 백업 데이터 접근이 모두 실패했습니다. 자동 주문은 실행되지 않습니다.';renderCandidates()}finally{autoBusy=false}}
 function autoTrade(now){
