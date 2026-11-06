@@ -65,12 +65,12 @@ async function scan(){if(autoBusy)return;autoBusy=true;try{
  const now=Date.now();candidates=rows.filter(v=>v.trade_price>0&&v.signed_change_rate>-0.12&&v.acc_trade_price_24h>0).map(v=>({coin:v.market.split('-')[1],price:v.trade_price,change:v.signed_change_rate*100,volume:v.acc_trade_price_24h})).sort((a,b)=>Math.abs(b.change)-Math.abs(a.change)).slice(0,40);
  for(const v of rows){if(!(v.trade_price>0))continue;const c=v.market.split('-')[1],k=key('upbit',c);quotes[k]={price:v.trade_price,change:(v.signed_change_rate||0)*100};let w=watch[c]||{prices:[],lastTrade:0,volumes:[]};w.volumes??=[];w.volumes.push({volume:Number(v.acc_trade_price_24h)||0,time:now});w.volumes=w.volumes.filter(p=>now-p.time<10*60000).slice(-20);w.prices.push({price:v.trade_price,time:now});w.prices=w.prices.filter(p=>now-p.time<30*60000).slice(-60);watch[c]=w}
  autoLog='최근 후보 조회 '+new Date().toLocaleTimeString('ko-KR')+' · '+candidates.length+'종목'+(failed?' · 일부 시세 조회 실패':'')+(allMarkets.length===SYMBOLS.length?' · 주요 코인만 검색':'');
- if(autoOn&&snapshotAge<120000)autoTrade(now);else if(autoOn&&snapshotAge>=120000)autoLog='백업 시세 지연으로 매매 보류 · 최신 시세 필요';
- if(autoOn && !autoLog.includes('가상 매수') && !autoLog.includes('가상 매도')){const ready=candidates.filter(v=>{const w=watch[v.coin];return w&&w.prices.length>=4&&now-w.prices[0].time>=90000&&now-w.lastTrade>=900000});const btc=quotes['upbit:BTC'];autoLog='후보 '+candidates.length+'개 · 관측시간 충족 '+ready.length+'개 · '+(ready.length?'가격 조정 후 재상승·거래대금 증가 등 매수 조건 미충족':'최소 90초 관측 또는 재매수 대기 중')+(btc&&btc.change<=-5?' · BTC 급락장 신규매수 제한':'')+' · 마지막 검사 '+new Date().toLocaleTimeString('ko-KR');}
+ const liveQuotes=rows.length>0&&rows!==snapshot?.upbit&&failed===0;const freshBackup=rows===snapshot?.upbit&&snapshotAge<120000;if(autoOn&&(liveQuotes||freshBackup))autoTrade(now);else if(autoOn)autoLog='시세 신뢰도 부족으로 매매 보류 · 최신 시세 필요';
+ if(autoOn && !autoLog.includes('가상 매수') && !autoLog.includes('가상 매도')){const ready=candidates.filter(v=>{const w=watch[v.coin];return w&&w.prices.length>=3&&now-w.prices[0].time>=60000&&now-w.lastTrade>=180000});const btc=quotes['upbit:BTC'];autoLog='후보 '+candidates.length+'개 · 관측시간 충족 '+ready.length+'개 · '+(ready.length?'가격 조정 후 재상승·거래대금 증가 등 매수 조건 미충족':'최소 60초 관측 또는 재매수 대기 중')+(btc&&btc.change<=-5?' · BTC 급락장 신규매수 제한':'')+' · 마지막 검사 '+new Date().toLocaleTimeString('ko-KR');}
  render();
  }catch(err){autoLog='후보 조회 실패: '+err.message+' · 공개 시세 및 백업 데이터 접근이 모두 실패했습니다. 자동 주문은 실행되지 않습니다.';renderCandidates()}finally{autoBusy=false}}
 function autoTrade(now){
- // 모의투자 안전 제한: 최대 20종목, 10만원 단위, 단일 주문 총자산 10% 및 100만원 상한, 현금 10% 보유
+ // 모의투자 안전 제한: 최대 20종목, 1만원 단위, 단일 주문 총자산 10% 및 100만원 상한, 현금 10% 보유
  for(const [k,p] of Object.entries(state.positions)){
   if(!k.startsWith('upbit:')||!(p.qty>0))continue;
   const c=k.split(':')[1],v=quotes[k];if(!v)continue;
