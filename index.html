@@ -26,7 +26,23 @@ const quote=(e,c)=>quotes[key(e,c)];
 const freshQuote=(e,c,maxAge=30000)=>{const q=quote(e,c);return q?.observedAt&&Date.now()-q.observedAt<=maxAge?q:null};
 function populate(){const selected=coin();$('coin').innerHTML=SYMBOLS.map(s=>'<option value="'+s+'">'+s+'</option>').join('');$('coin').value=SYMBOLS.includes(selected)?selected:'ADA'}
 function updateStatus(s){$('status').textContent=s}
-async function getJson(url){const ctl=new AbortController(),t=setTimeout(()=>ctl.abort(),9500);try{const r=await fetch(url,{signal:ctl.signal,cache:'no-store'});if(!r.ok)throw Error('HTTP '+r.status);return await r.json()}finally{clearTimeout(t)}}
+async function getJson(url){
+ const ctl=new AbortController(),t=setTimeout(()=>ctl.abort(),6500);
+ try{
+  const r=await fetch(url,{signal:ctl.signal,cache:'no-store'});
+  if(!r.ok)throw Error('HTTP '+r.status);
+  return await r.json();
+ }finally{clearTimeout(t)}
+}
+async function upbitJson(path){
+ const urls=['https://api.upbit.com'+path,'https://api.upbit.com'+path];
+ let last;
+ for(let i=0;i<urls.length;i++){
+  try{return await getJson(urls[i])}
+  catch(e){last=e;if(i===0)await new Promise(r=>setTimeout(r,350))}
+ }
+ throw last;
+}
 
 // Independently poll held markets, including coins outside the default watchlist.
 // A missing/delisted market remains unpriced; never substitute a different exchange.
@@ -42,7 +58,7 @@ async function refreshHeld(){
   for(let i=0;i<targets.length;i+=15){
    const batch=targets.slice(i,i+15);
    try{
-    const rows=await getJson('https://api.upbit.com/v1/ticker?markets='+encodeURIComponent(batch.join(',')));
+    const rows=await upbitJson('/v1/ticker?markets='+encodeURIComponent(batch.join(',')));
     const seen=new Set();
     for(const r of rows){if(!r.market?.startsWith('KRW-')||!(r.trade_price>0))continue;
       const c=r.market.split('-')[1],k=key('upbit',c),now=Date.now();
@@ -88,7 +104,7 @@ function autoSellHeld(now){
  }
  if(changed)save();
 }
-async function fetchUpbit(){const markets=[...new Set([...SYMBOLS.map(s=>'KRW-'+s),...heldMarkets()])].join(',');const rows=await getJson('https://api.upbit.com/v1/ticker?markets='+encodeURIComponent(markets));if(!Array.isArray(rows))throw Error('업비트 응답 오류');for(const r of rows){const c=r.market.split('-')[1];if(r.trade_price>0)quotes[key('upbit',c)]={price:r.trade_price,change:(r.signed_change_rate||0)*100,observedAt:Date.now()}}lastUpbitSuccess=Date.now()}
+async function fetchUpbit(){const markets=[...new Set([...SYMBOLS.map(s=>'KRW-'+s),...heldMarkets()])].join(',');const rows=await upbitJson('/v1/ticker?markets='+encodeURIComponent(markets));if(!Array.isArray(rows))throw Error('업비트 응답 오류');for(const r of rows){const c=r.market.split('-')[1];if(r.trade_price>0)quotes[key('upbit',c)]={price:r.trade_price,change:(r.signed_change_rate||0)*100,observedAt:Date.now()}}lastUpbitSuccess=Date.now()}
 async function fetchBithumb(){const results=await Promise.allSettled(SYMBOLS.map(async c=>{const r=await getJson('https://api.bithumb.com/public/ticker/'+c+'_KRW');if(r.status!=='0000'||!r.data||!(Number(r.data.closing_price)>0))throw Error(c);return {c,price:Number(r.data.closing_price),change:Number(r.data.fluctate_rate_24H)||0}}));let ok=0;for(const r of results)if(r.status==='fulfilled'){const v=r.value;quotes[key('bithumb',v.c)]={price:v.price,change:v.change};ok++}if(!ok)throw Error('빗썸 공개 API 응답 없음')}
 async function fetchBinance(){const rows=await getJson('https://api.binance.com/api/v3/ticker/24hr');if(!Array.isArray(rows))throw Error('바이낸스 응답 오류');for(const r of rows){if(r.symbol.endsWith('USDT')&&Number(r.lastPrice)>0)binance[r.symbol.slice(0,-4)]={change:Number(r.priceChangePercent),price:Number(r.lastPrice),volume:Number(r.quoteVolume)}}}
 async function loadSnapshot(){try{const data=await getJson('./market-snapshot.json?t='+Math.floor(Date.now()/60000));const age=Date.now()-Date.parse(data.updated_at);if(!Array.isArray(data.upbit)||!Number.isFinite(age)||age<0||age>20*60000)throw Error('백업 시세가 20분 이상 지연됨');snapshot=data;snapshotAge=age;allMarkets=Array.isArray(data.markets)?data.markets:allMarkets;for(const r of data.upbit){if(r.market?.startsWith('KRW-')&&r.trade_price>0){const c=r.market.split('-')[1];if(!freshQuote('upbit',c))quotes[key('upbit',c)]={price:r.trade_price,change:(r.signed_change_rate||0)*100,source:'backup',observedAt:Date.parse(data.updated_at)}}}for(const r of data.bithumb||[]){if(r.market?.startsWith('KRW-')&&r.trade_price>0){quotes[key('bithumb',r.market.split('-')[1])]={price:r.trade_price,change:(r.signed_change_rate||0)*100}}}for(const r of data.binance||[]){if(r.symbol?.endsWith('USDT'))binance[r.symbol.slice(0,-4)]={price:+r.lastPrice,change:+r.priceChangePercent,volume:+r.quoteVolume}}return true}catch(e){snapshot=null;return false}}
@@ -149,17 +165,19 @@ function renderStats(){
 function renderCross(){const names=new Set(['BTC','ETH','ADA','XRP',...Object.keys(state.positions).filter(k=>state.positions[k].qty>0).map(k=>k.split(':')[1]),...candidates.slice(0,5).map(v=>v.coin)]);let divergent=0;const rows=[];for(const c of names){const u=quotes[key('upbit',c)],b=quotes[key('bithumb',c)],g=binance[c];if(!u&&!b&&!g)continue;const delta=u&&g?u.change-g.change:null;const separate=delta!==null&&Math.abs(delta)>=3;if(separate)divergent++;const label=separate?(delta>0?'국내 상대 강세':'해외 상대 강세'):(u&&u.change>2&&g&&g.change>2?'동반 상승':'관찰');rows.push('<tr><td>'+escapeHtml(c)+'</td><td>'+(u?u.change.toFixed(2)+'%':'-')+'</td><td>'+(b?b.change.toFixed(2)+'%':'-')+'</td><td>'+(g?g.change.toFixed(2)+'%':'-')+'</td><td>'+label+'</td></tr>')} $('crossRows').innerHTML=rows.join('')||'<tr><td colspan="5">조회된 시세가 없습니다.</td></tr>';$('crossSummary').textContent='주요·보유·후보 코인만 표시 · 업비트 KRW / 빗썸 KRW / 바이낸스 USDT의 24시간 변동률 비교 · 상대 강세 '+divergent+'종목 (거래소별 기준 시점·환율·거래량 차이 주의)'}
 function renderCandidates(){const target=$('candidates');if(!target)return;target.innerHTML=candidates.slice(0,8).map(v=>'<tr><td>'+escapeHtml(v.coin)+'</td><td>'+won(v.price)+'</td><td class="up">+'+v.change.toFixed(2)+'%</td><td>'+won(v.volume)+'</td></tr>').join('')||'<tr><td colspan="4">조회된 후보 없음</td></tr>';$('autoStatus').textContent=(autoOn?'자동 가상매매 실행 중':'자동 가상매매 꺼짐')+' · '+(autoLog||'브라우저가 열려 있을 때만 실행');$('autoToggle').textContent=autoOn?'자동 가상매매 중지':'자동 가상매매 시작'}
 async function scan(){if(autoBusy)return;autoBusy=true;scanStartedAt=Date.now();partialQuotes=false;try{
- if(!allMarkets.length){try{const markets=await getJson('https://api.upbit.com/v1/market/all?isDetails=false');allMarkets=markets.filter(m=>m.market.startsWith('KRW-')).map(m=>m.market)}catch(err){allMarkets=SYMBOLS.map(c=>'KRW-'+c);autoLog='전체 마켓 조회 불가 · 주요 코인만 탐색'}}
+ if(!allMarkets.length){try{const markets=await upbitJson('/v1/market/all?isDetails=false');allMarkets=markets.filter(m=>m.market.startsWith('KRW-')).map(m=>m.market)}catch(err){allMarkets=SYMBOLS.map(c=>'KRW-'+c);autoLog='전체 마켓 조회 불가 · 주요 코인만 탐색'}}
  let rows=[];let failed=0;let liveSource=false;let scanAge=Infinity;
  // Smaller batches reduce failures caused by long query strings and rate limits.
  const fetchChunk=async chunk=>{
    for(let attempt=0;attempt<2;attempt++){
-     try{const result=await getJson('https://api.upbit.com/v1/ticker?markets='+encodeURIComponent(chunk.join(',')));
+     try{const result=await upbitJson('/v1/ticker?markets='+encodeURIComponent(chunk.join(',')));
        if(Array.isArray(result)&&result.length)return result;
      }catch(e){if(attempt===0)await new Promise(r=>setTimeout(r,450))}
    }
    return null;
  };
+ // Keep live held-market quotes separate from candidate-scanning failures.
+ // Failure to load unrelated markets must not block fresh held-market exit checks.
  // Fetch batches with bounded concurrency instead of sequentially blocking the scan.
  const batches=[];for(let i=0;i<allMarkets.length;i+=25)batches.push(allMarkets.slice(i,i+25));
  for(let i=0;i<batches.length;i+=3){
@@ -219,7 +237,7 @@ $('exportJson').onclick=()=>{const blob=new Blob([JSON.stringify({version:1,crea
 $('importJson').onclick=()=>$('jsonFile').click();
 $('jsonFile').onchange=async e=>{try{const file=e.target.files[0];if(!file)return;if(file.size>5000000)throw Error('파일이 너무 큽니다');const data=JSON.parse(await file.text()),v=data.state;if(!v||!Number.isFinite(v.cash)||v.cash<0||!v.positions||!Array.isArray(v.trades)||v.trades.length>100000)throw Error('올바른 백업 파일이 아닙니다');if(!confirm('현재 모의투자 기록을 백업 파일로 교체할까요?'))return;state=v;save();render();alert('복원 완료')}catch(err){alert('복원 실패: '+err.message)}finally{e.target.value=''}};
 $('backtest').onclick=async()=>{const el=$('backtestResult');el.textContent='업비트 ADA 과거 일봉 조회 중…';try{
- const candles=await getJson('https://api.upbit.com/v1/candles/days?market=KRW-ADA&count=200');
+ const candles=await upbitJson('/v1/candles/days?market=KRW-ADA&count=200');
  if(!Array.isArray(candles)||candles.length<60)throw Error('일봉 데이터 부족');
  const bars=candles.reverse(),fee=FEE+SLIPPAGE;let cash=1000000,qty=0,entry=0,peak=0,wins=0,losses=0,closed=0,maxEquity=1000000,maxDD=0;
  for(let i=20;i<bars.length;i++){const b=bars[i],price=Number(b.trade_price),prev=bars.slice(i-20,i),avg=prev.reduce((a,x)=>a+Number(x.trade_price),0)/20,volAvg=prev.reduce((a,x)=>a+Number(x.candle_acc_trade_price),0)/20;
