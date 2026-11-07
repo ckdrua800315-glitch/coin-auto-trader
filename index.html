@@ -141,7 +141,8 @@ function autoTrade(now,sellOnly=false){
   const recent=(watch[c]?.prices||[]).map(x=>x.price),momentum=recent.length>=3?recent.at(-1)/recent.at(-3)-1:0;const strongTrend=rate>=0.08&&momentum>=0&&drawdown>-.08;const exit=rate<=-0.025||(!strongTrend&&((rate>=0.02&&drawdown<=-0.012)||(rate>=0.06&&drawdown<=-0.035)||(rate>=0.20&&drawdown<=-0.08)));
   if(exit){const fill=v.price*(1-SLIPPAGE),amount=p.qty*fill,fee=amount*FEE;state.cash+=amount-fee;state.trades.unshift({time:new Date().toLocaleString('ko-KR'),exchange:'upbit',coin:c,side:'자동 매도',qty:p.qty,price:fill,amount,fee});p.qty=0;p.avg=0;p.peak=0;(watch[c]??={prices:[],lastTrade:0}).lastTrade=now;announce(c+' 가상 매도 체결');autoLog=c+' 가상 매도 '+(rate*100).toFixed(2)+'% (예상 수수료·슬리피지 반영)'}
  }
- if(sellOnly){save();return}\n let active=Object.values(state.positions).filter(p=>p.qty>0).length;
+ if(sellOnly){save();return}
+ let active=Object.values(state.positions).filter(p=>p.qty>0).length;
  if(active<20)for(const v of candidates){
   const w=watch[v.coin];if(!w||w.prices.length<2||now-w.prices[0].time<60000||now-w.lastTrade<180000||!quotes[key('upbit',v.coin)]?.observedAt||now-quotes[key('upbit',v.coin)].observedAt>90000)continue;
   const k=key('upbit',v.coin);if(state.positions[k]?.qty>0)continue;
