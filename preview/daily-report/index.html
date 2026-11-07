@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>코인 가상매매 · 일일손익 미리보기</title><style>
+:root{font-family:system-ui,-apple-system,sans-serif;color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0b1020;color:#edf2ff}header{padding:18px;background:#161e34;position:sticky;top:0;z-index:2}h1{font-size:21px;margin:0 0 5px}small,.muted{color:#9cacc9}.wrap{max-width:1100px;margin:auto;padding:14px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px}.card{background:#161e34;border:1px solid #283653;border-radius:13px;padding:15px;margin-bottom:12px}h2{font-size:17px;margin:0 0 12px}label{display:block;margin:10px 0 5px;color:#b5c4df;font-size:13px}select,input,button{font:inherit;border-radius:8px;padding:11px;border:1px solid #405073;background:#0e162a;color:white;max-width:100%}input,select{width:100%}button{cursor:pointer;background:#315fd2;border:0;font-weight:600}button.secondary{background:#34435f}button.danger{background:#a63c54}.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.row>*{flex:1}table{border-collapse:collapse;width:100%;font-size:13px}th,td{padding:10px 7px;text-align:right;border-bottom:1px solid #283653;white-space:nowrap}th:first-child,td:first-child{text-align:left}.scroll{overflow-x:auto}.up{color:#ff6e86}.down{color:#6eaaff}.value{font-size:22px;font-weight:750;margin:5px 0}.badge{display:inline-block;background:#283c62;padding:4px 8px;border-radius:7px;font-size:12px}#chart{width:100%;height:180px;background:#0e162a;border-radius:9px}.notice{font-size:12px;line-height:1.6;color:#b9c7e0}#status{font-size:12px}a{color:#93bbff}</style></head><body>
+<header><div style="max-width:1100px;margin:auto"><h1>📈 코인 가상매매 대시보드 <span class="badge">모의투자 전용</span></h1><small id="status">시세 연결 준비 중…</small></div></header><main class="wrap">
+<div class="grid"><section class="card"><div class="muted">총 평가자산</div><div class="value" id="equity">-</div><div id="pnl">-</div></section><section class="card"><div class="muted">가상 원화 잔고</div><div class="value" id="cash">-</div><small>초기 가상자금 100만원</small></section><section class="card"><div class="muted">보유 종목 / 거래 횟수</div><div class="value" id="counts">-</div><small id="updated">-</small></section></div>
+<div class="grid"><section class="card"><h2>시장 / 코인 선택</h2><div class="row"><div><label>거래소</label><select id="exchange"><option value="upbit">업비트</option><option value="bithumb">빗썸</option></select></div><div><label>코인</label><select id="coin"></select></div></div><div class="value" id="price">-</div><div id="change" class="muted">-</div><p class="notice">시세는 공개 API에서 조회합니다. 거래소별 호가·체결가격과 다를 수 있으며, 이 화면에서 실제 주문은 전송되지 않습니다.</p><button class="secondary" id="refresh">시세 새로고침</button></section>
+<section class="card"><h2>가상 주문</h2><label>수량 (코인 개수)</label><input id="qty" type="number" min="0" step="any" placeholder="예: 10"><div class="row" style="margin-top:12px"><button id="buy">가상 매수</button><button class="danger" id="sell">가상 매도</button></div><p class="notice" id="estimate">코인을 선택하고 수량을 입력하세요.</p><div id="tradeMsg" role="status"></div></section></div>
+<section class="card"><h2>가격 흐름 · 간단 신호</h2><canvas id="chart"></canvas><div id="signal" class="notice">최근 시세 데이터를 불러오는 중입니다.</div><p class="notice">신호는 최근 수집된 가격 변화만 이용한 참고 지표이며 매수·매도 추천이나 수익 보장이 아닙니다.</p></section>
+<section class="card"><h2>📊 자동매매 성과 분석</h2><div class="grid"><div><small>완료 거래 / 승률</small><div class="value" id="statWin">-</div></div><div><small>실현손익 (추정 수수료 포함)</small><div class="value" id="statProfit">-</div></div><div><small>평균 이익 / 평균 손실</small><div class="value" id="statRatio">-</div></div><div><small>현재 평가자산 기준 손익</small><div class="value" id="statEquity">-</div></div></div><p class="notice">자동매매 가상 수수료 편도 0.05%, 가상 슬리피지 편도 0.05% 가정. 같은 종목의 매수·매도 기록을 순서대로 연결한 추정치이며 실제 체결·슬리피지는 반영되지 않습니다. 80% 승률 목표 달성 여부는 충분한 거래 표본이 쌓인 뒤 평가합니다.</p></section><section class="card"><h2>자동 가상매매 · 상승 후보 탐색</h2><p class="notice">업비트 원화마켓을 조회해 거래대금과 상승률로 후보를 찾습니다. 최근 관측 고점에서 소폭 조정 후 회복하고 관측 거래대금이 증가할 때 가상 매수를 시도합니다. 비트코인 24시간 하락률이 -5% 이하이면 신규 자동매수를 제한하되, 해외 대비 5%p 이상 강한 독립 상승 후보는 예외적으로 검토합니다. 상승 중에는 최고가 대비 되돌림을 관찰해 매도하며, 최대 20종목을 보유합니다. 10만원 단위로 10만~100만원을 배분합니다. 단일 주문은 평가자산의 최대 10%이며 현금 최소 10%를 유지합니다. 저점·고점 적중을 보장하지 않습니다.</p><div class="row"><button id="autoToggle">자동 가상매매 시작</button><button class="secondary" id="scanNow">후보 다시 찾기</button></div><p id="autoStatus" class="notice">자동매매 꺼짐 · 브라우저가 열려 있을 때만 실행</p><div class="scroll"><table><thead><tr><th>상승 후보</th><th>현재가</th><th>24시간 상승률</th><th>24시간 거래대금</th></tr></thead><tbody id="candidates"><tr><td colspan="4">검색 대기 중</td></tr></tbody></table></div></section><section class="card"><h2>추가 검증 도구</h2><div class="row"><button class="secondary" id="backtest">ADA 과거 200개 일봉 전략 검증</button><button class="secondary" id="exportJson">거래기록 백업</button><button class="secondary" id="importJson">거래기록 복원</button><input type="file" id="jsonFile" accept="application/json" style="display:none"></div><p id="backtestResult" class="notice">과거 검증은 현재 자동매매의 1분 관측 전략과 다르므로 참고용입니다.</p><label><input type="checkbox" id="voiceAlerts" style="width:auto"> 가상 매수·매도 음성 알림</label><p class="notice">브라우저를 닫으면 자동매매와 알림은 중단됩니다. 기록은 현재 기기 브라우저에 저장됩니다.</p></section><section class="card"><h2>거래소 교차 분석 · 주요 종목</h2><p id="crossSummary" class="notice">업비트·빗썸·바이낸스 공개 시세 비교 중…</p><div class="scroll"><table><thead><tr><th>코인</th><th>업비트 24시간</th><th>빗썸 24시간</th><th>바이낸스 24시간</th><th>해석</th></tr></thead><tbody id="crossRows"></tbody></table></div></section><section class="card"><h2>시장 시세 (선택 종목만)</h2><div class="scroll"><table><thead><tr><th>종목</th><th>현재가 (KRW)</th><th>24시간 변동</th></tr></thead><tbody id="market"></tbody></table></div></section>
+<section class="card"><details id="dailyDetails"><summary style="cursor:pointer;font-weight:700">📅 일일 수익·손실 펼치기 (한국시간 자정 기준)</summary><p class="muted">매도 완료 시점 기준 실현손익입니다. 수수료 왕복 0.05%씩 추정 차감하며 보유 중 평가손익은 포함하지 않습니다.</p><div id="dailySummary"></div></details></section><section class="card notice"><b>일일손익 미리보기</b><p>자동매매는 이 미리보기에서 비활성화되어 있습니다. 원래 프로그램은 별도로 계속 사용하세요.</p></section><section class="card"><h2>가상 보유 자산</h2><div class="scroll"><table><thead><tr><th>거래소·코인</th><th>수량</th><th>평균 매수가</th><th>평가금액</th><th>평가손익</th></tr></thead><tbody id="holdings"></tbody></table></div></section>
+<section class="card"><h2>가상 거래 내역</h2><div class="row"><button class="secondary" id="csv">CSV 내려받기</button><button class="danger" id="reset">모의투자 초기화</button></div><div class="scroll"><table><thead><tr><th>시간</th><th>거래소</th><th>종목</th><th>구분</th><th>수량</th><th>가격</th><th>금액</th></tr></thead><tbody id="history"></tbody></table></div></section>
+<section class="card notice"><b>중요 안내</b><p>이 페이지는 브라우저에서만 작동하는 모의투자 시험 버전입니다. 데이터는 현재 브라우저의 로컬 저장소에 저장되며 기기 변경·브라우저 데이터 삭제 시 사라질 수 있습니다. 백그라운드 24시간 자동매매, 뉴스 분석, 서버 동기화, 실제 주문은 아직 구현되지 않았습니다. 백업 시세는 최대 20분까지 지연될 수 있으며 매매 검증용으로만 사용하세요. 실거래 API 키를 이 공개 웹사이트에 입력하지 마세요.</p></section></main>
+<script>
+'use strict';
+const SYMBOLS=['BTC','ETH','XRP','ADA','DOGE','IOST','QKC','MOCA','SOL','SAND','RSR'];
+const INITIAL=1000000, KEY='coin-paper-v3', FEE=0.0005, SLIPPAGE=0.0005;
+const $=id=>document.getElementById(id);
+const won=n=>Number.isFinite(n)?n.toLocaleString('ko-KR',{maximumFractionDigits:n<1?6:n<100?3:0})+'원':'-';
+const num=n=>Number(n).toLocaleString('ko-KR',{maximumFractionDigits:8});
+const escapeHtml=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let state;try{state=JSON.parse(localStorage.getItem(KEY))}catch{}
+if(!state||typeof state.cash!=='number'||!state.positions||!Array.isArray(state.trades))state={cash:INITIAL,positions:{},trades:[]};
+let lastUpbitSuccess=0,partialQuotes=false;let snapshot=null,snapshotAge=Infinity,binance={},quotes={},series={},lastFetch=0, autoOn=false,allMarkets=[],watch={},candidates=[],autoLast=0,autoBusy=false,autoLog='';
+const save=()=>localStorage.setItem(KEY,JSON.stringify(state));
+const ex=()=>$('exchange').value, coin=()=>$('coin').value, key=(e,c)=>e+':'+c;
+const quote=(e,c)=>quotes[key(e,c)];
+function populate(){const selected=coin();$('coin').innerHTML=SYMBOLS.map(s=>'<option value="'+s+'">'+s+'</option>').join('');$('coin').value=SYMBOLS.includes(selected)?selected:'ADA'}
+function updateStatus(s){$('status').textContent=s}
+async function getJson(url){const ctl=new AbortController(),t=setTimeout(()=>ctl.abort(),9500);try{const r=await fetch(url,{signal:ctl.signal,cache:'no-store'});if(!r.ok)throw Error('HTTP '+r.status);return await r.json()}finally{clearTimeout(t)}}
+async function fetchUpbit(){const markets=SYMBOLS.map(s=>'KRW-'+s).join(',');const rows=await getJson('https://api.upbit.com/v1/ticker?markets='+encodeURIComponent(markets));if(!Array.isArray(rows))throw Error('업비트 응답 오류');for(const r of rows){const c=r.market.split('-')[1];if(r.trade_price>0)quotes[key('upbit',c)]={price:r.trade_price,change:(r.signed_change_rate||0)*100,observedAt:Date.now()}}lastUpbitSuccess=Date.now()}
+async function fetchBithumb(){const results=await Promise.allSettled(SYMBOLS.map(async c=>{const r=await getJson('https://api.bithumb.com/public/ticker/'+c+'_KRW');if(r.status!=='0000'||!r.data||!(Number(r.data.closing_price)>0))throw Error(c);return {c,price:Number(r.data.closing_price),change:Number(r.data.fluctate_rate_24H)||0}}));let ok=0;for(const r of results)if(r.status==='fulfilled'){const v=r.value;quotes[key('bithumb',v.c)]={price:v.price,change:v.change};ok++}if(!ok)throw Error('빗썸 공개 API 응답 없음')}
+async function fetchBinance(){const rows=await getJson('https://api.binance.com/api/v3/ticker/24hr');if(!Array.isArray(rows))throw Error('바이낸스 응답 오류');for(const r of rows){if(r.symbol.endsWith('USDT')&&Number(r.lastPrice)>0)binance[r.symbol.slice(0,-4)]={change:Number(r.priceChangePercent),price:Number(r.lastPrice),volume:Number(r.quoteVolume)}}}
+async function loadSnapshot(){try{const data=await getJson('./market-snapshot.json?t='+Math.floor(Date.now()/60000));const age=Date.now()-Date.parse(data.updated_at);if(!Array.isArray(data.upbit)||!Number.isFinite(age)||age<0||age>20*60000)throw Error('백업 시세가 20분 이상 지연됨');snapshot=data;snapshotAge=age;allMarkets=Array.isArray(data.markets)?data.markets:allMarkets;for(const r of data.upbit){if(r.market?.startsWith('KRW-')&&r.trade_price>0){const c=r.market.split('-')[1];quotes[key('upbit',c)]={price:r.trade_price,change:(r.signed_change_rate||0)*100}}}for(const r of data.bithumb||[]){if(r.market?.startsWith('KRW-')&&r.trade_price>0){quotes[key('bithumb',r.market.split('-')[1])]={price:r.trade_price,change:(r.signed_change_rate||0)*100}}}for(const r of data.binance||[]){if(r.symbol?.endsWith('USDT'))binance[r.symbol.slice(0,-4)]={price:+r.lastPrice,change:+r.priceChangePercent,volume:+r.quoteVolume}}return true}catch(e){snapshot=null;return false}}
+async function refresh(){updateStatus('공개 시세 갱신 중…');$('refresh').disabled=true;const results=await Promise.allSettled([fetchUpbit(),fetchBithumb(),fetchBinance()]);lastFetch=Date.now();const failures=results.map((r,i)=>r.status==='rejected'?(['업비트','빗썸','바이낸스'][i]):null).filter(Boolean);let fallback=false;if(failures.length)fallback=await loadSnapshot();updateStatus(failures.length?(fallback?'백업 공개 시세 사용 ('+Math.round(snapshotAge/60000)+'분 지연) · 가상매매만 허용':'시세 연결 실패: '+failures.join(', ')+' · 자동 주문 제한'):'공개 시세 연결 · '+new Date().toLocaleTimeString('ko-KR')+' 기준');$('updated').textContent='마지막 갱신 '+new Date().toLocaleTimeString('ko-KR');const q=quote(ex(),coin());if(q){const k=key(ex(),coin());(series[k]??=[]).push({time:Date.now(),price:q.price});series[k]=series[k].slice(-60)}render();$('refresh').disabled=false}
+function render(){renderDaily();renderCandidates();renderStats();renderCross();const e=ex(),c=coin(),q=quote(e,c);$('price').textContent=q?won(q.price):'시세 없음';$('change').textContent=q?'24시간 '+(q.change>=0?'+':'')+q.change.toFixed(2)+'%':'조회 실패';$('change').className=q?(q.change>=0?'up':'down'):'muted';const qty=Number($('qty').value);$('estimate').textContent=q&&qty>0?'예상 주문금액: '+won(q.price*qty)+' (수수료 미반영)':'수량을 입력하면 주문금액이 표시됩니다.';let equity=state.cash,active=0;const rows=[];for(const [k,p] of Object.entries(state.positions)){if(!(p.qty>0))continue;active++;const v=quote(...k.split(':'));const value=v?p.qty*v.price:null;const profit=value===null?null:value-p.qty*p.avg;if(value!==null)equity+=value;rows.push('<tr><td>'+escapeHtml(k)+'</td><td>'+num(p.qty)+'</td><td>'+won(p.avg)+'</td><td>'+(value===null?'시세 없음':won(value))+'</td><td class="'+(profit>=0?'up':'down')+'">'+(profit===null?'산정 불가':won(profit))+'</td></tr>')}const missing=Object.keys(state.positions).some(k=>state.positions[k].qty>0&&!quote(...k.split(':')));$('equity').textContent=missing?'일부 시세 없음':won(equity);$('pnl').textContent=missing?'평가손익 계산 대기':'초기자금 대비 '+won(equity-INITIAL);$('pnl').className=equity>=INITIAL?'up':'down';$('cash').textContent=won(state.cash);$('counts').textContent=active+'종목 / '+state.trades.length+'회';$('holdings').innerHTML=rows.join('')||'<tr><td colspan="5">가상 보유 코인이 없습니다.</td></tr>';$('market').innerHTML=SYMBOLS.map(s=>{const v=quote(e,s);return '<tr><td>'+s+'</td><td>'+(v?won(v.price):'-')+'</td><td class="'+(v&&v.change>=0?'up':'down')+'">'+(v?(v.change>=0?'+':'')+v.change.toFixed(2)+'%':'-')+'</td></tr>'}).join('');$('history').innerHTML=state.trades.slice(0,100).map(t=>'<tr><td>'+escapeHtml(t.time)+'</td><td>'+escapeHtml(t.exchange)+'</td><td>'+escapeHtml(t.coin)+'</td><td>'+escapeHtml(t.side)+'</td><td>'+num(t.qty)+'</td><td>'+won(t.price)+'</td><td>'+won(t.amount)+'</td></tr>').join('')||'<tr><td colspan="7">거래 기록이 없습니다.</td></tr>';draw()}
+function draw(){const cv=$('chart'),rect=cv.getBoundingClientRect(),dpr=window.devicePixelRatio||1;cv.width=Math.max(1,rect.width*dpr);cv.height=180*dpr;const ctx=cv.getContext('2d');ctx.scale(dpr,dpr);const w=rect.width,h=180;ctx.clearRect(0,0,w,h);const points=series[key(ex(),coin())]||[];if(points.length<2){$('signal').textContent='이 페이지에서 시세를 2회 이상 갱신하면 간단한 가격 흐름이 표시됩니다.';ctx.fillStyle='#91a3c4';ctx.fillText('가격 데이터 수집 중',16,28);return}const values=points.map(p=>p.price),lo=Math.min(...values),hi=Math.max(...values),span=hi-lo||1;ctx.beginPath();points.forEach((p,i)=>{const x=15+(w-30)*i/(points.length-1),y=15+(h-30)*(1-(p.price-lo)/span);i?ctx.lineTo(x,y):ctx.moveTo(x,y)});ctx.strokeStyle=values.at(-1)>=values[0]?'#ff7089':'#6eaaff';ctx.lineWidth=2;ctx.stroke();const delta=(values.at(-1)/values[0]-1)*100;$('signal').textContent='최근 수집 '+points.length+'회 · 변화 '+delta.toFixed(2)+'% · '+(delta>0.5?'단기 상승 흐름':delta<-.5?'단기 하락 흐름':'횡보 구간')+' (페이지를 닫으면 수집 중단)'}
+function trade(side){const e=ex(),c=coin(),q=quote(e,c),qty=Number($('qty').value);if(!q||!lastFetch||Date.now()-lastFetch>120000){alert('최신 시세가 없습니다. 새로고침 후 주문하세요.');return}if(!Number.isFinite(qty)||qty<=0){alert('0보다 큰 수량을 입력하세요.');return}const amount=qty*q.price;if(!Number.isFinite(amount)||amount<=0){alert('주문금액 오류');return}const k=key(e,c),p=state.positions[k]||{qty:0,avg:0};if(side==='매수'){if(amount>state.cash+1e-7){alert('가상 원화 잔고가 부족합니다.');return}p.avg=(p.avg*p.qty+amount)/(p.qty+qty);p.qty+=qty;state.cash-=amount}else{if(qty>p.qty+1e-8){alert('보유 수량이 부족합니다.');return}p.qty=Math.max(0,p.qty-qty);state.cash+=amount;if(!p.qty)p.avg=0}state.positions[k]=p;state.trades.unshift({time:new Date().toLocaleString('ko-KR'),exchange:e,coin:c,side,qty,price:q.price,amount});save();$('tradeMsg').textContent='가상 '+side+' 완료: '+c+' '+num(qty)+'개';$('qty').value='';render()}
+$('buy').onclick=()=>trade('매수');$('sell').onclick=()=>trade('매도');$('qty').oninput=render;$('refresh').onclick=refresh;$('exchange').onchange=render;$('coin').onchange=render;window.onresize=draw;
+$('reset').onclick=()=>{if(confirm('모든 가상 잔고·보유·거래 기록을 초기화할까요?')){state={cash:INITIAL,positions:{},trades:[]};save();render()}};
+$('csv').onclick=()=>{const headers=['시간','거래소','코인','구분','수량','가격(KRW)','금액(KRW)'];const data=[headers,...state.trades.map(t=>[t.time,t.exchange,t.coin,t.side,t.qty,t.price,t.amount])];const csv='\ufeff'+data.map(row=>row.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\r\n');const blob=new Blob([csv],{type:'text/csv;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='paper-trades.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)};
+
+
+function dailyTime(t){
+ if(Number.isFinite(+t.timestamp)&&+t.timestamp>1e12)return new Date(+t.timestamp);
+ const raw=String(t.time||'');let m=raw.match(/(\\d{4})\\.\\s*(\\d{1,2})\\.\\s*(\\d{1,2})\\.?.*?(오전|오후)?\\s*(\\d{1,2}):(\\d{2})(?::(\\d{2}))?/);
+ if(!m)return new Date(NaN);
+ let h=+m[5];if(m[4]==='오후'&&h<12)h+=12;if(m[4]==='오전'&&h===12)h=0;
+ return new Date(+m[1],+m[2]-1,+m[3],h,+m[6],+(m[7]||0));
+}
+function renderDaily(){
+ const lots={},days={};const ordered=[...state.trades].reverse();
+ for(const t of ordered){
+  if(!t||!(+t.qty>0)||!(+t.price>0))continue;
+  const key=(t.exchange||'upbit')+':'+t.coin,qty=+t.qty,price=+t.price;
+  if(String(t.side).includes('매수')){(lots[key]??=[]).push({qty,price,time:t.time});continue}
+  if(!String(t.side).includes('매도'))continue;
+  const dt=dailyTime(t);if(!Number.isFinite(dt.getTime()))continue;
+  const day=[dt.getFullYear(),String(dt.getMonth()+1).padStart(2,'0'),String(dt.getDate()).padStart(2,'0')].join('-');
+  const bucket=days[day]??={profit:0,gain:0,loss:0,rows:[]};let left=qty;
+  while(left>1e-9&&(lots[key]||[]).length){
+   const lot=lots[key][0],n=Math.min(left,lot.qty),cost=n*lot.price,proceeds=n*price,net=proceeds-cost-(cost+proceeds)*FEE;
+   bucket.profit+=net;if(net>=0)bucket.gain+=net;else bucket.loss+=net;
+   bucket.rows.push({coin:t.coin,exchange:t.exchange,buyTime:lot.time,buyPrice:lot.price,buyAmount:cost,sellTime:t.time,sellPrice:price,sellAmount:proceeds,net,rate:cost?net/cost*100:0});
+   left-=n;lot.qty-=n;if(lot.qty<1e-9)lots[key].shift();
+  }
+ }
+ const entries=Object.entries(days).sort((a,b)=>b[0].localeCompare(a[0]));
+ $('dailySummary').innerHTML=entries.map(([day,d])=>'<details style="margin:10px 0;padding:10px;border:1px solid #34435e;border-radius:8px"><summary style="cursor:pointer">'+day+'　순손익 <b class="'+(d.profit>=0?'up':'down')+'">'+won(d.profit)+'</b>　수익 '+won(d.gain)+' / 손실 '+won(d.loss)+'</summary><div class="scroll"><table><thead><tr><th>코인</th><th>매수시간</th><th>매수가</th><th>매수금액</th><th>매도시간</th><th>매도가</th><th>매도금액</th><th>순손익</th><th>수익률</th></tr></thead><tbody>'+d.rows.map(r=>'<tr><td>'+escapeHtml(r.exchange+' '+r.coin)+'</td><td>'+escapeHtml(r.buyTime)+'</td><td>'+won(r.buyPrice)+'</td><td>'+won(r.buyAmount)+'</td><td>'+escapeHtml(r.sellTime)+'</td><td>'+won(r.sellPrice)+'</td><td>'+won(r.sellAmount)+'</td><td class="'+(r.net>=0?'up':'down')+'">'+won(r.net)+'</td><td>'+r.rate.toFixed(2)+'%</td></tr>').join('')+'</tbody></table></div></details>').join('')||'<p class="muted">아직 매도 완료 기록이 없습니다.</p>';
+}
+
+function renderStats(){
+ const trades=[...state.trades].reverse(), lots={},closed=[];
+ for(const t of trades){if(!t||!t.coin||!Number.isFinite(+t.price)||!Number.isFinite(+t.qty))continue;
+  const k=(t.exchange||'upbit')+':'+t.coin,qty=+t.qty,price=+t.price,side=String(t.side||'');
+  if(side.includes('매수')){(lots[k]??=[]).push({qty,price});continue}
+  if(!side.includes('매도'))continue;
+  let left=qty,entry=0,matched=0;const q=lots[k]||[];
+  while(left>1e-9&&q.length){const lot=q[0],n=Math.min(left,lot.qty);entry+=n*lot.price;matched+=n;left-=n;lot.qty-=n;if(lot.qty<1e-9)q.shift()}
+  if(matched>0){const proceeds=matched*price,fee=(entry+proceeds)*0.0005;closed.push(proceeds-entry-fee)}
+ }
+ const wins=closed.filter(v=>v>0),losses=closed.filter(v=>v<0),profit=closed.reduce((a,b)=>a+b,0);
+ const avgWin=wins.length?wins.reduce((a,b)=>a+b,0)/wins.length:0,avgLoss=losses.length?Math.abs(losses.reduce((a,b)=>a+b,0)/losses.length):0;
+ $('statWin').textContent=closed.length+'건 / '+(closed.length?(wins.length/closed.length*100).toFixed(1)+'%':'-');
+ $('statProfit').textContent=won(profit);
+ $('statRatio').textContent=won(avgWin)+' / '+won(avgLoss);
+ const equity=state.cash+Object.entries(state.positions).reduce((a,[k,p])=>a+(p.qty>0?p.qty*(quotes[k]?.price||p.avg):0),0);
+ $('statEquity').textContent=won(equity-INITIAL);
+}
+function renderCross(){const names=new Set(['BTC','ETH','ADA','XRP',...Object.keys(state.positions).filter(k=>state.positions[k].qty>0).map(k=>k.split(':')[1]),...candidates.slice(0,5).map(v=>v.coin)]);let divergent=0;const rows=[];for(const c of names){const u=quotes[key('upbit',c)],b=quotes[key('bithumb',c)],g=binance[c];if(!u&&!b&&!g)continue;const delta=u&&g?u.change-g.change:null;const separate=delta!==null&&Math.abs(delta)>=3;if(separate)divergent++;const label=separate?(delta>0?'국내 상대 강세':'해외 상대 강세'):(u&&u.change>2&&g&&g.change>2?'동반 상승':'관찰');rows.push('<tr><td>'+escapeHtml(c)+'</td><td>'+(u?u.change.toFixed(2)+'%':'-')+'</td><td>'+(b?b.change.toFixed(2)+'%':'-')+'</td><td>'+(g?g.change.toFixed(2)+'%':'-')+'</td><td>'+label+'</td></tr>')} $('crossRows').innerHTML=rows.join('')||'<tr><td colspan="5">조회된 시세가 없습니다.</td></tr>';$('crossSummary').textContent='주요·보유·후보 코인만 표시 · 업비트 KRW / 빗썸 KRW / 바이낸스 USDT의 24시간 변동률 비교 · 상대 강세 '+divergent+'종목 (거래소별 기준 시점·환율·거래량 차이 주의)'}
+function renderCandidates(){const target=$('candidates');if(!target)return;target.innerHTML=candidates.slice(0,8).map(v=>'<tr><td>'+escapeHtml(v.coin)+'</td><td>'+won(v.price)+'</td><td class="up">+'+v.change.toFixed(2)+'%</td><td>'+won(v.volume)+'</td></tr>').join('')||'<tr><td colspan="4">조회된 후보 없음</td></tr>';$('autoStatus').textContent=(autoOn?'자동 가상매매 실행 중':'자동 가상매매 꺼짐')+' · '+(autoLog||'브라우저가 열려 있을 때만 실행');$('autoToggle').textContent=autoOn?'자동 가상매매 중지':'자동 가상매매 시작'}
+async function scan(){if(autoBusy)return;autoBusy=true;partialQuotes=false;try{
+ if(!allMarkets.length){try{const markets=await getJson('https://api.upbit.com/v1/market/all?isDetails=false');allMarkets=markets.filter(m=>m.market.startsWith('KRW-')).map(m=>m.market)}catch(err){allMarkets=SYMBOLS.map(c=>'KRW-'+c);autoLog='전체 마켓 조회 불가 · 주요 코인만 탐색'}}
+ let rows=[];let failed=0;let liveSource=false;let scanAge=Infinity;
+ // Smaller batches reduce failures caused by long query strings and rate limits.
+ const fetchChunk=async chunk=>{
+   for(let attempt=0;attempt<2;attempt++){
+     try{const result=await getJson('https://api.upbit.com/v1/ticker?markets='+encodeURIComponent(chunk.join(',')));
+       if(Array.isArray(result)&&result.length)return result;
+     }catch(e){if(attempt===0)await new Promise(r=>setTimeout(r,450))}
+   }
+   return null;
+ };
+ for(let i=0;i<allMarkets.length;i+=25){
+   const chunk=await fetchChunk(allMarkets.slice(i,i+25));
+   if(chunk)rows.push(...chunk);else failed++;
+ }
+ if(rows.length){liveSource=true;scanAge=0}
+ if(!rows.length){
+   // If full-market polling fails, try a fresh small live request before using a snapshot.
+   const small=await fetchChunk(SYMBOLS.map(c=>'KRW-'+c));
+   if(small){rows=small;liveSource=true;partialQuotes=true;scanAge=0}
+ }
+ if(!rows.length){
+   const loaded=await loadSnapshot();
+   if(!loaded||!snapshot?.upbit?.length)throw Error('실시간 및 백업 시세 연결 실패');
+   rows=snapshot.upbit;scanAge=Date.now()-Date.parse(snapshot.updated_at);
+ }
+ const allowTrade=liveSource&&rows.length>0; // Trade only individual symbols with fresh confirmed quotes.
+ const sourceLabel=liveSource?(failed||partialQuotes?'실시간 일부 시장':'실시간 전체 시장'):'백업 '+Math.round(scanAge/60000)+'분 지연';
+  const now=Date.now();candidates=rows.filter(v=>v.market?.startsWith('KRW-')&&v.trade_price>0&&v.signed_change_rate>-0.12&&v.acc_trade_price_24h>0).map(v=>({coin:v.market.split('-')[1],price:v.trade_price,change:v.signed_change_rate*100,volume:v.acc_trade_price_24h})).sort((a,b)=>(Math.log10(1+b.volume)*2+Math.min(Math.abs(b.change),15))-(Math.log10(1+a.volume)*2+Math.min(Math.abs(a.change),15))).slice(0,80);
+ if(liveSource){
+ for(const v of rows){if(!(v.trade_price>0))continue;const c=v.market.split('-')[1],k=key('upbit',c);quotes[k]={price:v.trade_price,change:(v.signed_change_rate||0)*100,observedAt:now};let w=watch[c]||{prices:[],lastTrade:0,volumes:[]};w.volumes??=[];w.volumes.push({volume:Number(v.acc_trade_price_24h)||0,time:now});w.volumes=w.volumes.filter(p=>now-p.time<10*60000).slice(-20);w.prices.push({price:v.trade_price,time:now});w.prices=w.prices.filter(p=>now-p.time<30*60000).slice(-60);watch[c]=w}
+ }
+ autoLog=sourceLabel+' · 후보 '+candidates.length+'개 · '+(failed?'일부 요청 실패 '+failed+'회':'요청 정상');
+ if(autoOn&&allowTrade)autoTrade(now);
+ else if(autoOn)autoLog=sourceLabel+' · 자동매매 보류: 최신 개별 시세 없음';
+  if(autoOn && allowTrade && !autoLog.includes('가상 매수') && !autoLog.includes('가상 매도')){const ready=candidates.filter(v=>{const w=watch[v.coin];return w&&w.prices.length>=2&&now-w.prices[0].time>=60000&&now-w.lastTrade>=180000});const btc=quotes['upbit:BTC'];autoLog=sourceLabel+' · 후보 '+candidates.length+'개 · 관측시간 충족 '+ready.length+'개 · '+(ready.length?'가격 조정 후 재상승·거래대금 증가 등 매수 조건 미충족':'최소 60초 관측 또는 재매수 대기 중')+(btc&&btc.change<=-5?' · BTC 급락장 신규매수 제한':'')+' · 마지막 검사 '+new Date().toLocaleTimeString('ko-KR');}
+ render();
+ }catch(err){autoLog='후보 조회 실패: '+err.message+' · 공개 시세 및 백업 데이터 접근이 모두 실패했습니다. 자동 주문은 실행되지 않습니다.';renderCandidates()}finally{autoBusy=false}}
+// 보유 종목은 업비트 WebSocket 체결가로 별도 감시합니다. 브라우저가 열려 있을 때만 동작합니다.
+let heldSocket=null,heldSocketCodes='',heldReconnect=null,heldLastMessage=0;
+function heldCodes(){return Object.entries(state.positions).filter(([k,p])=>k.startsWith('upbit:')&&p.qty>0).map(([k])=>'KRW-'+k.split(':')[1]).sort()}
+function syncHeldSocket(){
+ const codes=heldCodes(),signature=codes.join(',');
+ if(!autoOn||!codes.length){if(heldSocket){heldSocket.onclose=null;heldSocket.close();heldSocket=null}heldSocketCodes='';return}
+ if(heldSocket&&heldSocketCodes===signature&&(heldSocket.readyState===0||heldSocket.readyState===1))return;
+ if(heldSocket){heldSocket.onclose=null;heldSocket.close()}
+ heldSocketCodes=signature;
+ try{
+  const ws=new WebSocket('wss://api.upbit.com/websocket/v1');heldSocket=ws;ws.binaryType='blob';
+  ws.onopen=()=>{if(heldSocket!==ws)return;ws.send(JSON.stringify([{ticket:'paper-held-'+Date.now()},{type:'ticker',codes,isOnlyRealtime:true},{format:'SIMPLE'}]))};
+  ws.onmessage=async event=>{
+   if(heldSocket!==ws||!autoOn)return;
+   try{
+    const raw=typeof event.data==='string'?event.data:await event.data.text(),msg=JSON.parse(raw);
+    const market=msg.cd||msg.code,price=Number(msg.tp??msg.trade_price);
+    if(!codes.includes(market)||!(price>0))return;
+    const now=Date.now(),k='upbit:'+market.slice(4);
+    quotes[k]={...(quotes[k]||{}),price,observedAt:now};
+    heldLastMessage=now;
+    const w=watch[market.slice(4)]??={prices:[],volumes:[],lastTrade:0};
+    w.prices.push({price,time:now});w.prices=w.prices.filter(p=>now-p.time<30*60000).slice(-120);watch[market.slice(4)]=w;
+    // 틱마다 보유분 매도만 판단합니다. 신규 매수는 기존 정기 스캔에서 처리합니다.
+    autoTrade(now,true);render();
+    if(heldCodes().join(',')!==heldSocketCodes)syncHeldSocket();
+   }catch(e){autoLog='보유 종목 실시간 메시지 처리 오류: '+e.message}
+  };
+  ws.onerror=()=>{autoLog='보유 종목 실시간 연결 오류 · 재연결 대기';renderCandidates()};
+  ws.onclose=()=>{if(heldSocket!==ws)return;heldSocket=null;if(autoOn){clearTimeout(heldReconnect);heldReconnect=setTimeout(syncHeldSocket,3000)}};
+ }catch(e){autoLog='보유 종목 실시간 연결 실패: '+e.message}
+}
+setInterval(()=>{if(autoOn){syncHeldSocket();if(heldSocket&&heldSocket.readyState===1&&heldLastMessage&&Date.now()-heldLastMessage>30000){heldSocket.close()}}},1000);
+function autoTrade(now,sellOnly=false){
+ // 모의투자 안전 제한: 최대 20종목, 1만원 단위, 단일 주문 총자산 10% 및 100만원 상한, 현금 10% 보유
+ for(const [k,p] of Object.entries(state.positions)){
+  if(!k.startsWith('upbit:')||!(p.qty>0))continue;
+  const c=k.split(':')[1],v=quotes[k];if(!v||!v.observedAt||now-v.observedAt>90000)continue;
+  p.peak=Math.max(p.peak||p.avg,v.price);
+  const rate=v.price/p.avg-1,drawdown=v.price/p.peak-1;
+  const recent=(watch[c]?.prices||[]).map(x=>x.price),momentum=recent.length>=3?recent.at(-1)/recent.at(-3)-1:0;const strongTrend=rate>=0.08&&momentum>=0&&drawdown>-.08;const exit=rate<=-0.025||(!strongTrend&&((rate>=0.02&&drawdown<=-0.012)||(rate>=0.06&&drawdown<=-0.035)||(rate>=0.20&&drawdown<=-0.08)));
+  if(exit){const fill=v.price*(1-SLIPPAGE),amount=p.qty*fill,fee=amount*FEE;state.cash+=amount-fee;state.trades.unshift({time:new Date().toLocaleString('ko-KR'),exchange:'upbit',coin:c,side:'자동 매도',qty:p.qty,price:fill,amount,fee});p.qty=0;p.avg=0;p.peak=0;(watch[c]??={prices:[],lastTrade:0}).lastTrade=now;announce(c+' 가상 매도 체결');autoLog=c+' 가상 매도 '+(rate*100).toFixed(2)+'% (예상 수수료·슬리피지 반영)'}
+ }
+ if(sellOnly){save();return}
+ let active=Object.values(state.positions).filter(p=>p.qty>0).length;
+ if(active<20)for(const v of candidates){
+  const w=watch[v.coin];if(!w||w.prices.length<2||now-w.prices[0].time<60000||now-w.lastTrade<180000||!quotes[key('upbit',v.coin)]?.observedAt||now-quotes[key('upbit',v.coin)].observedAt>90000)continue;
+  const k=key('upbit',v.coin);if(state.positions[k]?.qty>0)continue;
+  const prices=w.prices.map(p=>p.price),high=Math.max(...prices),current=v.price,prior=prices.at(-2);
+  const low=Math.min(...prices),range=high/Math.max(low,1e-12)-1;const rebound=current>prior&&current>=low*1.004;const breakout=current>=high*0.997&&current>prior;const sideways=range>=0.008&&current<=low+(high-low)*0.70&&rebound;const dip=range>=0.006&&rebound&&current<high*0.998;const trend=breakout&&v.change>=0.7;const recovery=current>=low*1.003&&current>prior&&v.change>-3;if(!(sideways||dip||trend||recovery))continue;
+  // 상승률·거래대금 기반 점수는 미래 상승 확률이 아닌 단순 탐색 점수
+  const volumes=w.volumes||[],volumeDelta=volumes.length>=2?volumes.at(-1).volume-volumes[0].volume:0;const btc=quotes['upbit:BTC'];if(btc&&btc.change<=-5){const global=binance[v.coin],local=quotes[key('upbit',v.coin)];if(!(global&&local&&local.change-global.change>=5&&local.change>=5))continue;}if(volumes.length>=3&&volumeDelta<0&&!(trend||recovery))continue;const global=binance[v.coin],relative=global?v.change-global.change:0;const score=(v.change>=5?2:v.change>=3?1:0)+(volumeDelta>0?1:0)+(range>=0.03?1:0)+(relative>=5?1:0);
+  const units=score>=4?10:score===3?7:score===2?4:score===1?2:1;
+  const equity=state.cash+Object.entries(state.positions).reduce((sum,[pk,p])=>sum+(p.qty>0?(quotes[pk]?.price||p.avg)*p.qty:0),0);
+  const cap=Math.min(units*100000,1000000,equity*0.1,state.cash-Math.max(100000,equity*0.1));
+  const amount=Math.floor(cap/10000)*10000;
+  if(amount<10000)continue;
+  const qty=Math.floor(amount/(current*(1+SLIPPAGE)*(1+FEE))*1e8)/1e8;
+  if(qty<=0||qty*current>state.cash)continue;
+  const fill=current*(1+SLIPPAGE),cost=qty*fill,fee=cost*FEE;if(cost+fee>state.cash)continue;state.cash-=cost+fee;state.positions[k]={qty,avg:fill,peak:fill};
+  state.trades.unshift({time:new Date().toLocaleString('ko-KR'),exchange:'upbit',coin:v.coin,side:'자동 매수',qty,price:fill,amount:cost,fee});
+  w.lastTrade=now;active++;announce(v.coin+' 가상 매수 체결');autoLog=v.coin+' 탐색점수 '+score+'/4 · 가상 매수 '+won(cost);if(active>=20)break;
+ }
+ save();syncHeldSocket();
+}
+
+function announce(message){if(!$('voiceAlerts').checked||!('speechSynthesis' in window))return;try{const u=new SpeechSynthesisUtterance(message);u.lang='ko-KR';u.rate=1;window.speechSynthesis.speak(u)}catch(e){}}
+$('exportJson').onclick=()=>{const blob=new Blob([JSON.stringify({version:1,created:new Date().toISOString(),state},null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='paper-trading-backup.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),3000)};
+$('importJson').onclick=()=>$('jsonFile').click();
+$('jsonFile').onchange=async e=>{try{const file=e.target.files[0];if(!file)return;if(file.size>5000000)throw Error('파일이 너무 큽니다');const data=JSON.parse(await file.text()),v=data.state;if(!v||!Number.isFinite(v.cash)||v.cash<0||!v.positions||!Array.isArray(v.trades)||v.trades.length>100000)throw Error('올바른 백업 파일이 아닙니다');if(!confirm('현재 모의투자 기록을 백업 파일로 교체할까요?'))return;state=v;save();render();alert('복원 완료')}catch(err){alert('복원 실패: '+err.message)}finally{e.target.value=''}};
+$('backtest').onclick=async()=>{const el=$('backtestResult');el.textContent='업비트 ADA 과거 일봉 조회 중…';try{
+ const candles=await getJson('https://api.upbit.com/v1/candles/days?market=KRW-ADA&count=200');
+ if(!Array.isArray(candles)||candles.length<60)throw Error('일봉 데이터 부족');
+ const bars=candles.reverse(),fee=FEE+SLIPPAGE;let cash=1000000,qty=0,entry=0,peak=0,wins=0,losses=0,closed=0,maxEquity=1000000,maxDD=0;
+ for(let i=20;i<bars.length;i++){const b=bars[i],price=Number(b.trade_price),prev=bars.slice(i-20,i),avg=prev.reduce((a,x)=>a+Number(x.trade_price),0)/20,volAvg=prev.reduce((a,x)=>a+Number(x.candle_acc_trade_price),0)/20;
+ if(qty){peak=Math.max(peak,price);const rate=price/entry-1,dd=price/peak-1;if(rate<=-.025||(rate>=.02&&dd<=-.035)||price<avg*.98){const proceeds=qty*price*(1-fee);cash+=proceeds;closed++;if(proceeds>qty*entry)wins++;else losses++;qty=0}}
+ else if(price>avg*1.02&&Number(b.candle_acc_trade_price)>volAvg*1.5){const stake=Math.min(cash*.1,100000);if(stake>=10000){entry=price*(1+fee);qty=stake/entry;cash-=stake;peak=price}}
+ const equity=cash+qty*price;maxEquity=Math.max(maxEquity,equity);maxDD=Math.max(maxDD,1-equity/maxEquity);
+ }
+ const final=cash+qty*Number(bars.at(-1).trade_price);el.textContent='ADA 일봉 '+bars.length+'개 단순 추세전략 | 완료 '+closed+'건 | 승률 '+(closed?(wins/closed*100).toFixed(1)+'%':'표본 없음')+' | 최종 평가 '+won(final)+' | 수익률 '+((final/1000000-1)*100).toFixed(2)+'% | 최대낙폭 '+(maxDD*100).toFixed(2)+'%. 일봉 종가를 체결가로 가정한 별도 검증이며 실제 1분 자동매매 전략의 성과가 아닙니다.';
+ }catch(err){el.textContent='과거 검증 실패: '+err.message}};
+
+$('autoToggle').onclick=()=>{autoOn=!autoOn;localStorage.setItem('coin-paper-auto-enabled',String(autoOn));autoLog=autoOn?'자동매매 켜짐 · 1분마다 후보 확인':'자동매매 중지됨';renderCandidates();if(autoOn)scan();syncHeldSocket()};
+$('scanNow').onclick=scan;
+populate();render();autoLog=autoOn?'이전 설정 복원 · 자동매매 실행 중 (시세·조건 충족 시에만 거래)':'자동매매 꺼짐';renderCandidates();refresh();scan();syncHeldSocket();setInterval(refresh,30000);setInterval(()=>{if(autoOn)scan()},60000);document.addEventListener('visibilitychange',()=>{if(!document.hidden&&autoOn){refresh();scan()}});
+
+</script></body></html>
