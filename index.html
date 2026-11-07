@@ -98,7 +98,40 @@ async function scan(){if(autoBusy)return;autoBusy=true;partialQuotes=false;try{
   if(autoOn && allowTrade && !autoLog.includes('가상 매수') && !autoLog.includes('가상 매도')){const ready=candidates.filter(v=>{const w=watch[v.coin];return w&&w.prices.length>=2&&now-w.prices[0].time>=60000&&now-w.lastTrade>=180000});const btc=quotes['upbit:BTC'];autoLog=sourceLabel+' · 후보 '+candidates.length+'개 · 관측시간 충족 '+ready.length+'개 · '+(ready.length?'가격 조정 후 재상승·거래대금 증가 등 매수 조건 미충족':'최소 60초 관측 또는 재매수 대기 중')+(btc&&btc.change<=-5?' · BTC 급락장 신규매수 제한':'')+' · 마지막 검사 '+new Date().toLocaleTimeString('ko-KR');}
  render();
  }catch(err){autoLog='후보 조회 실패: '+err.message+' · 공개 시세 및 백업 데이터 접근이 모두 실패했습니다. 자동 주문은 실행되지 않습니다.';renderCandidates()}finally{autoBusy=false}}
-function autoTrade(now){
+// 보유 종목은 업비트 WebSocket 체결가로 별도 감시합니다. 브라우저가 열려 있을 때만 동작합니다.
+let heldSocket=null,heldSocketCodes='',heldReconnect=null,heldLastMessage=0;
+function heldCodes(){return Object.entries(state.positions).filter(([k,p])=>k.startsWith('upbit:')&&p.qty>0).map(([k])=>'KRW-'+k.split(':')[1]).sort()}
+function syncHeldSocket(){
+ const codes=heldCodes(),signature=codes.join(',');
+ if(!autoOn||!codes.length){if(heldSocket){heldSocket.onclose=null;heldSocket.close();heldSocket=null}heldSocketCodes='';return}
+ if(heldSocket&&heldSocketCodes===signature&&(heldSocket.readyState===0||heldSocket.readyState===1))return;
+ if(heldSocket){heldSocket.onclose=null;heldSocket.close()}
+ heldSocketCodes=signature;
+ try{
+  const ws=new WebSocket('wss://api.upbit.com/websocket/v1');heldSocket=ws;ws.binaryType='blob';
+  ws.onopen=()=>{if(heldSocket!==ws)return;ws.send(JSON.stringify([{ticket:'paper-held-'+Date.now()},{type:'ticker',codes,isOnlyRealtime:true},{format:'SIMPLE'}]))};
+  ws.onmessage=async event=>{
+   if(heldSocket!==ws||!autoOn)return;
+   try{
+    const raw=typeof event.data==='string'?event.data:await event.data.text(),msg=JSON.parse(raw);
+    const market=msg.cd||msg.code,price=Number(msg.tp??msg.trade_price);
+    if(!codes.includes(market)||!(price>0))return;
+    const now=Date.now(),k='upbit:'+market.slice(4);
+    quotes[k]={...(quotes[k]||{}),price,observedAt:now};
+    heldLastMessage=now;
+    const w=watch[market.slice(4)]??={prices:[],volumes:[],lastTrade:0};
+    w.prices.push({price,time:now});w.prices=w.prices.filter(p=>now-p.time<30*60000).slice(-120);watch[market.slice(4)]=w;
+    // 틱마다 보유분 매도만 판단합니다. 신규 매수는 기존 정기 스캔에서 처리합니다.
+    autoTrade(now,true);render();
+    if(heldCodes().join(',')!==heldSocketCodes)syncHeldSocket();
+   }catch(e){autoLog='보유 종목 실시간 메시지 처리 오류: '+e.message}
+  };
+  ws.onerror=()=>{autoLog='보유 종목 실시간 연결 오류 · 재연결 대기';renderCandidates()};
+  ws.onclose=()=>{if(heldSocket!==ws)return;heldSocket=null;if(autoOn){clearTimeout(heldReconnect);heldReconnect=setTimeout(syncHeldSocket,3000)}};
+ }catch(e){autoLog='보유 종목 실시간 연결 실패: '+e.message}
+}
+setInterval(()=>{if(autoOn){syncHeldSocket();if(heldSocket&&heldSocket.readyState===1&&heldLastMessage&&Date.now()-heldLastMessage>30000){heldSocket.close()}}},1000);
+function autoTrade(now,sellOnly=false){
  // 모의투자 안전 제한: 최대 20종목, 1만원 단위, 단일 주문 총자산 10% 및 100만원 상한, 현금 10% 보유
  for(const [k,p] of Object.entries(state.positions)){
   if(!k.startsWith('upbit:')||!(p.qty>0))continue;
@@ -108,7 +141,7 @@ function autoTrade(now){
   const recent=(watch[c]?.prices||[]).map(x=>x.price),momentum=recent.length>=3?recent.at(-1)/recent.at(-3)-1:0;const strongTrend=rate>=0.08&&momentum>=0&&drawdown>-.08;const exit=rate<=-0.025||(!strongTrend&&((rate>=0.02&&drawdown<=-0.012)||(rate>=0.06&&drawdown<=-0.035)||(rate>=0.20&&drawdown<=-0.08)));
   if(exit){const fill=v.price*(1-SLIPPAGE),amount=p.qty*fill,fee=amount*FEE;state.cash+=amount-fee;state.trades.unshift({time:new Date().toLocaleString('ko-KR'),exchange:'upbit',coin:c,side:'자동 매도',qty:p.qty,price:fill,amount,fee});p.qty=0;p.avg=0;p.peak=0;(watch[c]??={prices:[],lastTrade:0}).lastTrade=now;announce(c+' 가상 매도 체결');autoLog=c+' 가상 매도 '+(rate*100).toFixed(2)+'% (예상 수수료·슬리피지 반영)'}
  }
- let active=Object.values(state.positions).filter(p=>p.qty>0).length;
+ if(sellOnly){save();return}\n let active=Object.values(state.positions).filter(p=>p.qty>0).length;
  if(active<20)for(const v of candidates){
   const w=watch[v.coin];if(!w||w.prices.length<2||now-w.prices[0].time<60000||now-w.lastTrade<180000||!quotes[key('upbit',v.coin)]?.observedAt||now-quotes[key('upbit',v.coin)].observedAt>90000)continue;
   const k=key('upbit',v.coin);if(state.positions[k]?.qty>0)continue;
@@ -127,7 +160,7 @@ function autoTrade(now){
   state.trades.unshift({time:new Date().toLocaleString('ko-KR'),exchange:'upbit',coin:v.coin,side:'자동 매수',qty,price:fill,amount:cost,fee});
   w.lastTrade=now;active++;announce(v.coin+' 가상 매수 체결');autoLog=v.coin+' 탐색점수 '+score+'/4 · 가상 매수 '+won(cost);if(active>=20)break;
  }
- save();
+ save();syncHeldSocket();
 }
 
 function announce(message){if(!$('voiceAlerts').checked||!('speechSynthesis' in window))return;try{const u=new SpeechSynthesisUtterance(message);u.lang='ko-KR';u.rate=1;window.speechSynthesis.speak(u)}catch(e){}}
@@ -146,8 +179,8 @@ $('backtest').onclick=async()=>{const el=$('backtestResult');el.textContent='업
  const final=cash+qty*Number(bars.at(-1).trade_price);el.textContent='ADA 일봉 '+bars.length+'개 단순 추세전략 | 완료 '+closed+'건 | 승률 '+(closed?(wins/closed*100).toFixed(1)+'%':'표본 없음')+' | 최종 평가 '+won(final)+' | 수익률 '+((final/1000000-1)*100).toFixed(2)+'% | 최대낙폭 '+(maxDD*100).toFixed(2)+'%. 일봉 종가를 체결가로 가정한 별도 검증이며 실제 1분 자동매매 전략의 성과가 아닙니다.';
  }catch(err){el.textContent='과거 검증 실패: '+err.message}};
 
-$('autoToggle').onclick=()=>{autoOn=!autoOn;localStorage.setItem('coin-paper-auto-enabled',String(autoOn));autoLog=autoOn?'자동매매 켜짐 · 1분마다 후보 확인':'자동매매 중지됨';renderCandidates();if(autoOn)scan()};
+$('autoToggle').onclick=()=>{autoOn=!autoOn;localStorage.setItem('coin-paper-auto-enabled',String(autoOn));autoLog=autoOn?'자동매매 켜짐 · 1분마다 후보 확인':'자동매매 중지됨';renderCandidates();if(autoOn)scan();syncHeldSocket()};
 $('scanNow').onclick=scan;
-populate();render();autoLog=autoOn?'이전 설정 복원 · 자동매매 실행 중 (시세·조건 충족 시에만 거래)':'자동매매 꺼짐';renderCandidates();refresh();scan();setInterval(refresh,30000);setInterval(()=>{if(autoOn)scan()},60000);document.addEventListener('visibilitychange',()=>{if(!document.hidden&&autoOn){refresh();scan()}});
+populate();render();autoLog=autoOn?'이전 설정 복원 · 자동매매 실행 중 (시세·조건 충족 시에만 거래)':'자동매매 꺼짐';renderCandidates();refresh();scan();syncHeldSocket();setInterval(refresh,30000);setInterval(()=>{if(autoOn)scan()},60000);document.addEventListener('visibilitychange',()=>{if(!document.hidden&&autoOn){refresh();scan()}});
 
 </script></body></html>
