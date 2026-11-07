@@ -88,7 +88,7 @@ async function scan(){if(autoBusy)return;autoBusy=true;partialQuotes=false;try{
  }
  const allowTrade=liveSource&&rows.length>0; // Trade only individual symbols with fresh confirmed quotes.
  const sourceLabel=liveSource?(failed||partialQuotes?'실시간 일부 시장':'실시간 전체 시장'):'백업 '+Math.round(scanAge/60000)+'분 지연';
-  const now=Date.now();candidates=rows.filter(v=>v.trade_price>0&&v.signed_change_rate>-0.12&&v.acc_trade_price_24h>0).map(v=>({coin:v.market.split('-')[1],price:v.trade_price,change:v.signed_change_rate*100,volume:v.acc_trade_price_24h})).sort((a,b)=>Math.abs(b.change)-Math.abs(a.change)).slice(0,40);
+  const now=Date.now();candidates=rows.filter(v=>v.market?.startsWith('KRW-')&&v.trade_price>0&&v.signed_change_rate>-0.12&&v.acc_trade_price_24h>0).map(v=>({coin:v.market.split('-')[1],price:v.trade_price,change:v.signed_change_rate*100,volume:v.acc_trade_price_24h})).sort((a,b)=>(Math.log10(1+b.volume)*2+Math.min(Math.abs(b.change),15))-(Math.log10(1+a.volume)*2+Math.min(Math.abs(a.change),15))).slice(0,80);
  if(liveSource){
  for(const v of rows){if(!(v.trade_price>0))continue;const c=v.market.split('-')[1],k=key('upbit',c);quotes[k]={price:v.trade_price,change:(v.signed_change_rate||0)*100,observedAt:now};let w=watch[c]||{prices:[],lastTrade:0,volumes:[]};w.volumes??=[];w.volumes.push({volume:Number(v.acc_trade_price_24h)||0,time:now});w.volumes=w.volumes.filter(p=>now-p.time<10*60000).slice(-20);w.prices.push({price:v.trade_price,time:now});w.prices=w.prices.filter(p=>now-p.time<30*60000).slice(-60);watch[c]=w}
  }
@@ -121,7 +121,7 @@ function autoTrade(now){
   const cap=Math.min(units*100000,1000000,equity*0.1,state.cash-Math.max(100000,equity*0.1));
   const amount=Math.floor(cap/10000)*10000;
   if(amount<10000)continue;
-  const qty=Math.floor(amount/current*1e8)/1e8;
+  const qty=Math.floor(amount/(current*(1+SLIPPAGE)*(1+FEE))*1e8)/1e8;
   if(qty<=0||qty*current>state.cash)continue;
   const fill=current*(1+SLIPPAGE),cost=qty*fill,fee=cost*FEE;if(cost+fee>state.cash)continue;state.cash-=cost+fee;state.positions[k]={qty,avg:fill,peak:fill};
   state.trades.unshift({time:new Date().toLocaleString('ko-KR'),exchange:'upbit',coin:v.coin,side:'자동 매수',qty,price:fill,amount:cost,fee});
