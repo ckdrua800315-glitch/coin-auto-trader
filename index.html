@@ -133,17 +133,17 @@ function autoTrade(now){
   const c=k.split(':')[1],v=quotes[k];if(!v||!v.observedAt||now-v.observedAt>90000)continue;
   p.peak=Math.max(p.peak||p.avg,v.price);
   const rate=v.price/p.avg-1,drawdown=v.price/p.peak-1;
-  const recent=(watch[c]?.prices||[]).map(x=>x.price),momentum=recent.length>=3?recent.at(-1)/recent.at(-3)-1:0;const strongTrend=rate>=0.08&&momentum>=0&&drawdown>-.08;const exit=rate<=-0.025||(!strongTrend&&((rate>=0.02&&drawdown<=-0.012)||(rate>=0.06&&drawdown<=-0.035)||(rate>=0.20&&drawdown<=-0.08)));
+  const recent=(watch[c]?.prices||[]).map(x=>x.price),momentum=recent.length>=3?recent.at(-1)/recent.at(-3)-1:0;const strongTrend=rate>=0.08&&momentum>=0&&drawdown>-.08;const peakGain=p.peak/p.avg-1;const trailing=peakGain>=0.07?0.012:peakGain>=0.045?0.009:0.012;const exit=rate<=-0.025||(!strongTrend&&((peakGain>=0.025&&drawdown<=-trailing)||(rate>=0.20&&drawdown<=-0.08)));
   if(exit){const fill=v.price*(1-SLIPPAGE),amount=p.qty*fill,fee=amount*FEE;state.cash+=amount-fee;state.trades.unshift({time:new Date().toLocaleString('ko-KR'),exchange:'upbit',coin:c,side:'자동 매도',qty:p.qty,price:fill,amount,fee});p.qty=0;p.avg=0;p.peak=0;(watch[c]??={prices:[],lastTrade:0}).lastTrade=now;announce(c+' 가상 매도 체결');autoLog=c+' 가상 매도 '+(rate*100).toFixed(2)+'% (예상 수수료·슬리피지 반영)'}
  }
  let active=Object.values(state.positions).filter(p=>p.qty>0).length;
  if(active<20)for(const v of candidates){
   const w=watch[v.coin];if(!w||w.prices.length<2||now-w.prices[0].time<60000||now-w.lastTrade<180000||!quotes[key('upbit',v.coin)]?.observedAt||now-quotes[key('upbit',v.coin)].observedAt>90000)continue;
   const k=key('upbit',v.coin);if(state.positions[k]?.qty>0)continue;
-  const prices=w.prices.map(p=>p.price),high=Math.max(...prices),current=v.price,prior=prices.at(-2);
-  const low=Math.min(...prices),range=high/Math.max(low,1e-12)-1;const rebound=current>prior&&current>=low*1.004;const breakout=current>=high*0.997&&current>prior;const sideways=range>=0.008&&current<=low+(high-low)*0.70&&rebound;const dip=range>=0.006&&rebound&&current<high*0.998;const trend=breakout&&v.change>=0.7;const recovery=current>=low*1.003&&current>prior&&v.change>-3;if(!(sideways||dip||trend||recovery))continue;
+  const prices=w.prices.map(p=>p.price),high=Math.max(...prices),current=v.price,prior=prices.at(-2);const kst=new Date(now+9*3600000);const minute=kst.getUTCHours()*60+kst.getUTCMinutes();const opening=minute>=535&&minute<=565;const recentOpen=w.prices.filter(p=>p.time>=now-12*60000).map(p=>p.price);const openLow=Math.min(...recentOpen,current);const openHigh=Math.max(...recentOpen,current);const openDip=opening&&recentOpen.length>=3&&openHigh/openLow>=1.006&&current>=openLow*1.002&&current<=openLow*1.03&&current>prior;
+  const low=Math.min(...prices),range=high/Math.max(low,1e-12)-1;const rebound=current>prior&&current>=low*1.004;const breakout=current>=high*0.997&&current>prior;const sideways=range>=0.008&&current<=low+(high-low)*0.70&&rebound;const dip=range>=0.006&&rebound&&current<high*0.998;const trend=breakout&&v.change>=0.7;const recovery=current>=low*1.003&&current>prior&&v.change>-3;if(!(sideways||dip||trend||recovery||openDip))continue;if(opening&&!openDip&&current>openLow*1.03)continue;
   // 상승률·거래대금 기반 점수는 미래 상승 확률이 아닌 단순 탐색 점수
-  const volumes=w.volumes||[],volumeDelta=volumes.length>=2?volumes.at(-1).volume-volumes[0].volume:0;const btc=quotes['upbit:BTC'];if(btc&&btc.change<=-5){const global=binance[v.coin],local=quotes[key('upbit',v.coin)];if(!(global&&local&&local.change-global.change>=5&&local.change>=5))continue;}if(volumes.length>=3&&volumeDelta<0&&!(trend||recovery))continue;const global=binance[v.coin],relative=global?v.change-global.change:0;const score=(v.change>=5?2:v.change>=3?1:0)+(volumeDelta>0?1:0)+(range>=0.03?1:0)+(relative>=5?1:0);
+  const volumes=w.volumes||[],volumeDelta=volumes.length>=2?volumes.at(-1).volume-volumes[0].volume:0;const btc=quotes['upbit:BTC'];if(btc&&btc.change<=-5){const global=binance[v.coin],local=quotes[key('upbit',v.coin)];if(!(global&&local&&local.change-global.change>=5&&local.change>=5))continue;}if(volumes.length>=3&&volumeDelta<0&&!(trend||recovery))continue;const global=binance[v.coin],relative=global?v.change-global.change:0;const score=(v.change>=5?2:v.change>=3?1:0)+(volumeDelta>0?1:0)+(range>=0.03?1:0)+(relative>=5?1:0)+(openDip?2:0);
   const units=score>=4?10:score===3?7:score===2?4:score===1?2:1;
   const equity=state.cash+Object.entries(state.positions).reduce((sum,[pk,p])=>sum+(p.qty>0?(quotes[pk]?.price||p.avg)*p.qty:0),0);
   const cap=Math.min(units*100000,1000000,equity*0.1,state.cash-Math.max(100000,equity*0.1));
@@ -174,8 +174,8 @@ $('backtest').onclick=async()=>{const el=$('backtestResult');el.textContent='업
  const final=cash+qty*Number(bars.at(-1).trade_price);el.textContent='ADA 일봉 '+bars.length+'개 단순 추세전략 | 완료 '+closed+'건 | 승률 '+(closed?(wins/closed*100).toFixed(1)+'%':'표본 없음')+' | 최종 평가 '+won(final)+' | 수익률 '+((final/1000000-1)*100).toFixed(2)+'% | 최대낙폭 '+(maxDD*100).toFixed(2)+'%. 일봉 종가를 체결가로 가정한 별도 검증이며 실제 1분 자동매매 전략의 성과가 아닙니다.';
  }catch(err){el.textContent='과거 검증 실패: '+err.message}};
 
-$('autoToggle').onclick=()=>{autoOn=!autoOn;localStorage.setItem('coin-paper-auto-enabled',String(autoOn));autoLog=autoOn?'자동매매 켜짐 · 1분마다 후보 확인':'자동매매 중지됨';renderCandidates();if(autoOn)scan()};
+$('autoToggle').onclick=()=>{autoOn=!autoOn;localStorage.setItem('coin-paper-auto-enabled',String(autoOn));autoLog=autoOn?'자동매매 켜짐 · 30초마다 후보 확인':'자동매매 중지됨';renderCandidates();if(autoOn)scan()};
 $('scanNow').onclick=scan;
-populate();render();autoLog=autoOn?'이전 설정 복원 · 자동매매 실행 중 (시세·조건 충족 시에만 거래)':'자동매매 꺼짐';renderCandidates();refresh();scan();setInterval(refresh,30000);setInterval(()=>{if(autoOn)scan()},60000);document.addEventListener('visibilitychange',()=>{if(!document.hidden&&autoOn){refresh();scan()}});
+populate();render();autoLog=autoOn?'이전 설정 복원 · 자동매매 실행 중 (시세·조건 충족 시에만 거래)':'자동매매 꺼짐';renderCandidates();refresh();scan();setInterval(refresh,30000);setInterval(()=>{if(autoOn)scan()},30000);document.addEventListener('visibilitychange',()=>{if(!document.hidden&&autoOn){refresh();scan()}});
 
 </script></body></html>
