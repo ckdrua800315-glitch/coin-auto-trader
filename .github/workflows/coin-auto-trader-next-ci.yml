@@ -1,0 +1,41 @@
+name: CoinAutoTrader Next checks
+
+on:
+  push:
+    paths:
+      - 'CoinAutoTrader-Next/**'
+      - '.github/workflows/coin-auto-trader-next-ci.yml'
+  pull_request:
+    paths:
+      - 'CoinAutoTrader-Next/**'
+      - '.github/workflows/coin-auto-trader-next-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: CoinAutoTrader-Next
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Test application
+        run: npm test
+      - name: Test Windows service identity checks
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./tests/process-control.test.ps1

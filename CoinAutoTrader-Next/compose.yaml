@@ -1,0 +1,11 @@
+services:
+  trader:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8787:8787"
+    volumes:
+      - trader-data:/app/data
+    stop_grace_period: 30s
+volumes:
+  trader-data:

@@ -1,0 +1,21 @@
+[Unit]
+Description=Coin Harbor paper trader
+After=network-online.target
+Wants=network-online.target
+[Service]
+Type=simple
+User=cointrader
+WorkingDirectory=/opt/cointrader
+ExecStart=/usr/bin/node /opt/cointrader/src/server.js
+Environment=HOST=127.0.0.1
+Environment=DATA_DIR=/var/lib/cointrader
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+StateDirectory=cointrader
+[Install]
+WantedBy=multi-user.target
